@@ -14,18 +14,15 @@ import { setupSocketHandler } from './socket/socketHandler.js';
 const app = express();
 const server = http.createServer(app);
 
-const allowedOrigins = [
-  config.CLIENT_URL,
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://localhost:4000',
-  'http://127.0.0.1:4000',
-].filter(Boolean);
+const checkOrigin = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+  // Allow all valid origins (Vercel, localhost, custom domains) for seamless multiplayer & mobile connectivity
+  callback(null, true);
+};
 
 // Socket.IO configuration with CORS
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: checkOrigin,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -35,11 +32,11 @@ const io = new Server(server, {
 
 // Middleware
 app.use(helmet({
-  contentSecurityPolicy: false, // Disabled for Three.js WebGL and custom video sources in development
+  contentSecurityPolicy: false, // Disabled for Three.js WebGL and custom video sources
 }));
 
 app.use(cors({
-  origin: allowedOrigins,
+  origin: checkOrigin,
   credentials: true,
 }));
 

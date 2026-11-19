@@ -1,6 +1,7 @@
 import { io, Socket } from 'socket.io-client';
 import { useAppStore } from '../store/useAppStore';
 import { voiceService } from './voiceService';
+import { getApiBase } from './apiConfig';
 import { ChatMessage, MovieSyncState, RoomPlayer } from '../types';
 
 class SocketService {
@@ -16,9 +17,12 @@ class SocketService {
       return this.socket;
     }
 
-    const serverUrl = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-      ? 'http://localhost:4000'
-      : window.location.origin;
+    const apiBase = getApiBase();
+    const serverUrl = apiBase || (
+      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://localhost:4000'
+        : window.location.origin
+    );
 
     this.socket = io(serverUrl, {
       transports: ['websocket', 'polling'],
