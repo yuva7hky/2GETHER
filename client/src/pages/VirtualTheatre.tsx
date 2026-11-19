@@ -57,6 +57,21 @@ export const VirtualTheatre: React.FC = () => {
   const [mobileRun, setMobileRun] = useState(false);
   const [mobileJumpTrigger, setMobileJumpTrigger] = useState(false);
   const [mobileSitTrigger, setMobileSitTrigger] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
+
+  // Dynamic touch device detection (handles mobile landscape where screen width > 768px)
+  useEffect(() => {
+    const detectTouch = () => {
+      const hasTouch =
+        'ontouchstart' in window ||
+        navigator.maxTouchPoints > 0 ||
+        (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+      setIsTouchDevice(hasTouch);
+    };
+    detectTouch();
+    window.addEventListener('resize', detectTouch);
+    return () => window.removeEventListener('resize', detectTouch);
+  }, []);
 
   // Ensure socket is joined, in theatre, and load current movie if attached
   useEffect(() => {
@@ -240,46 +255,48 @@ export const VirtualTheatre: React.FC = () => {
         }}
       />
 
-      {/* 2. BOTTOM DESKTOP INTERACTION PILL */}
-      <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden md:flex items-center gap-3">
-        <div className="glass-panel px-5 py-2.5 rounded-full flex items-center gap-4 text-xs text-slate-300 border border-white/10 shadow-glass">
-          <span className="flex items-center gap-1.5">
-            <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-[10px] text-white">W A S D</kbd>
-            <span>Move</span>
-          </span>
-          <span className="text-white/20">•</span>
-          <span className="flex items-center gap-1.5">
-            <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-[10px] text-white">Shift</kbd>
-            <span>Sprint</span>
-          </span>
-          <span className="text-white/20">•</span>
-          <span className="flex items-center gap-1.5">
-            <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-[10px] text-white">Space</kbd>
-            <span>Hop</span>
-          </span>
-          <span className="text-white/20">•</span>
-          <span className="flex items-center gap-1.5">
-            <kbd className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
-              canPickupKey || canUnlockDoor || isSitting || canSitPrompt
-                ? 'bg-theatre-gold text-theatre-darkest shadow-glow-gold'
-                : 'bg-white/10 text-white'
-            }`}>
-              E
-            </kbd>
-            <span className={canPickupKey || canUnlockDoor || canSitPrompt ? 'text-theatre-gold font-bold' : ''}>
-              {canPickupKey
-                ? 'Pick Up Key 🗝️'
-                : canUnlockDoor
-                ? 'Unlock Doors 🚪'
-                : isSitting
-                ? 'Stand Up'
-                : canSitPrompt
-                ? 'Sit Together'
-                : 'Interact'}
+      {/* 2. BOTTOM DESKTOP INTERACTION PILL (PC / Laptop Only) */}
+      {!isTouchDevice && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 pointer-events-none flex items-center gap-3">
+          <div className="glass-panel px-5 py-2.5 rounded-full flex items-center gap-4 text-xs text-slate-300 border border-white/10 shadow-glass">
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-[10px] text-white">W A S D</kbd>
+              <span>Move</span>
             </span>
-          </span>
+            <span className="text-white/20">•</span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-[10px] text-white">Shift</kbd>
+              <span>Sprint</span>
+            </span>
+            <span className="text-white/20">•</span>
+            <span className="flex items-center gap-1.5">
+              <kbd className="px-1.5 py-0.5 rounded bg-white/10 font-mono text-[10px] text-white">Space</kbd>
+              <span>Hop</span>
+            </span>
+            <span className="text-white/20">•</span>
+            <span className="flex items-center gap-1.5">
+              <kbd className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
+                canPickupKey || canUnlockDoor || isSitting || canSitPrompt
+                  ? 'bg-theatre-gold text-theatre-darkest shadow-glow-gold'
+                  : 'bg-white/10 text-white'
+              }`}>
+                E
+              </kbd>
+              <span className={canPickupKey || canUnlockDoor || canSitPrompt ? 'text-theatre-gold font-bold' : ''}>
+                {canPickupKey
+                  ? 'Pick Up Key 🗝️'
+                  : canUnlockDoor
+                  ? 'Unlock Doors 🚪'
+                  : isSitting
+                  ? 'Stand Up'
+                  : canSitPrompt
+                  ? 'Sit Together'
+                  : 'Interact'}
+              </span>
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 2.5 INTERACTIVE TOUCH & GESTURE CINEMA SCREEN OVERLAY */}
       <ScreenGestureOverlay />
@@ -344,30 +361,32 @@ export const VirtualTheatre: React.FC = () => {
         <RemotePlayer />
       </Canvas>
 
-      {/* 4. MOBILE ON-SCREEN JOYSTICK & BUTTONS */}
-      <MobileControls
-        onVectorChange={setMobileVec}
-        onRunChange={setMobileRun}
-        onJumpTrigger={() => {
-          setMobileJumpTrigger(true);
-          setTimeout(() => setMobileJumpTrigger(false), 150);
-        }}
-        onSitTrigger={() => {
-          setMobileSitTrigger(true);
-          setTimeout(() => setMobileSitTrigger(false), 150);
-        }}
-        isSitting={isSitting}
-        canPickupKey={canPickupKey}
-        canUnlockDoor={canUnlockDoor}
-        onPickupKey={() => {
-          setPickupKeyTrigger(true);
-          setTimeout(() => setPickupKeyTrigger(false), 150);
-        }}
-        onUnlockDoor={() => {
-          setUnlockDoorTrigger(true);
-          setTimeout(() => setUnlockDoorTrigger(false), 150);
-        }}
-      />
+      {/* 4. MOBILE ON-SCREEN JOYSTICK & BUTTONS (Touch Devices Only) */}
+      {isTouchDevice && (
+        <MobileControls
+          onVectorChange={setMobileVec}
+          onRunChange={setMobileRun}
+          onJumpTrigger={() => {
+            setMobileJumpTrigger(true);
+            setTimeout(() => setMobileJumpTrigger(false), 150);
+          }}
+          onSitTrigger={() => {
+            setMobileSitTrigger(true);
+            setTimeout(() => setMobileSitTrigger(false), 150);
+          }}
+          isSitting={isSitting}
+          canPickupKey={canPickupKey}
+          canUnlockDoor={canUnlockDoor}
+          onPickupKey={() => {
+            setPickupKeyTrigger(true);
+            setTimeout(() => setPickupKeyTrigger(false), 150);
+          }}
+          onUnlockDoor={() => {
+            setUnlockDoorTrigger(true);
+            setTimeout(() => setUnlockDoorTrigger(false), 150);
+          }}
+        />
+      )}
 
       {/* 5. SLIDE-OUT CHAT DRAWER */}
       <ChatDrawer isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />

@@ -58,12 +58,16 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
   const canUnlockDoorRef = useRef(false);
   const isSteppingOnPlate = useRef(false);
 
-  // Camera settings
+  // Camera settings (Full 360 orbit & pitch tilt)
   const cameraDistance = useRef<number>(4.6);
   const cameraHeight = useRef<number>(2.4);
   const cameraYaw = useRef<number>(0);
+  const cameraPitch = useRef<number>(0);
   const isDraggingCamera = useRef<boolean>(false);
   const lastMouseX = useRef<number>(0);
+  const lastMouseY = useRef<number>(0);
+  const activeCameraTouchId = useRef<number | null>(null);
+  const initialPinchDist = useRef<number | null>(null);
 
   // Keyboard state
   const keys = useRef<{ [key: string]: boolean }>({});
@@ -93,7 +97,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
     socketService.unlockTheatreDoor();
   };
 
-  // Keyboard & Mouse Listeners
+  // Keyboard, Mouse & Mobile Touch Drag Listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       keys.current[e.code] = true;
@@ -116,37 +120,134 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
     const handleWheel = (e: WheelEvent) => {
       cameraDistance.current = THREE.MathUtils.clamp(
         cameraDistance.current + e.deltaY * 0.003,
-        3.0,
+        2.8,
         7.2
       );
     };
 
-    // Camera rotation drag
+    // Desktop Mouse Drag Look-Around
     const handleMouseDown = (e: MouseEvent) => {
-      if (e.button === 2 || e.button === 0) {
-        // If not clicking on UI buttons
-        const target = e.target as HTMLElement;
-        if (target.tagName === 'CANVAS' || target.getAttribute?.('data-gesture-overlay') === 'true') {
-          isDraggingCamera.current = true;
-          lastMouseX.current = e.clientX;
-        }
+      if (isSitting) return;
+      if (e.button === 0 || e.button === 2) {
+        const target = e.target as HTMLElement | null;
+        if (target?.closest('button') || target?.closest('[data-no-cam]')) return;
+        isDraggingCamera.current = true;
+        lastMouseX.current = e.clientX;
+        lastMouseY.current = e.clientY;
       }
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (isDraggingCamera.current) {
+      if (isDraggingCamera.current && activeCameraTouchId.current === null) {
         const deltaX = e.clientX - lastMouseX.current;
+        const deltaY = e.clientY - lastMouseY.current;
         lastMouseX.current = e.clientX;
-        cameraYaw.current = THREE.MathUtils.clamp(
-          cameraYaw.current - deltaX * 0.005,
-          -Math.PI / 4,
-          Math.PI / 4
+        lastMouseY.current = e.clientY;
+
+        // 360 yaw rotation
+        cameraYaw.current -= deltaX * 0.0055;
+        // Pitch tilt
+        cameraPitch.current = THREE.MathUtils.clamp(
+          cameraPitch.current - deltaY * 0.004,
+          -0.45,
+          0.65
         );
       }
     };
 
     const handleMouseUp = () => {
-      isDraggingCamera.current = false;
+      if (activeCameraTouchId.current === null) {
+        isDraggingCamera.current = false;
+      }
+    };
+
+    // Mobile Touch Drag & Pinch-Zoom
+    const handleTouchStart = (e: TouchEvent) => {
+      if (isSitting) return;
+
+      // Handle 2-finger pinch zoom
+      if (e.touches.length === 2) {
+        const dist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        initialPinchDist.current = dist;
+        return;
+      }
+
+      // Handle single finger camera drag
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (activeCameraTouchId.current !== null) continue;
+
+        // Ignore if touching inside joystick zone (bottom-left) or UI buttons
+        const isJoystickZone =
+          t.clientX < window.innerWidth * 0.38 && t.clientY > window.innerHeight * 0.42;
+        const target = t.target as HTMLElement | null;
+        if (isJoystickZone || target?.closest('button') || target?.closest('[data-no-cam]')) {
+          continue;
+        }
+
+        activeCameraTouchId.current = t.identifier;
+        lastMouseX.current = t.clientX;
+        lastMouseY.current = t.clientY;
+        isDraggingCamera.current = true;
+        break;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      // Pinch zoom
+      if (e.touches.length === 2 && initialPinchDist.current !== null) {
+        const currentDist = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const pinchDelta = initialPinchDist.current - currentDist;
+        cameraDistance.current = THREE.MathUtils.clamp(
+          cameraDistance.current + pinchDelta * 0.012,
+          2.8,
+          7.2
+        );
+        initialPinchDist.current = currentDist;
+        return;
+      }
+
+      // Camera look drag
+      if (activeCameraTouchId.current === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        const t = e.changedTouches[i];
+        if (t.identifier === activeCameraTouchId.current) {
+          const deltaX = t.clientX - lastMouseX.current;
+          const deltaY = t.clientY - lastMouseY.current;
+          lastMouseX.current = t.clientX;
+          lastMouseY.current = t.clientY;
+
+          // 360 yaw rotation
+          cameraYaw.current -= deltaX * 0.007;
+          // Pitch tilt
+          cameraPitch.current = THREE.MathUtils.clamp(
+            cameraPitch.current - deltaY * 0.005,
+            -0.45,
+            0.65
+          );
+          break;
+        }
+      }
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        initialPinchDist.current = null;
+      }
+      if (activeCameraTouchId.current === null) return;
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === activeCameraTouchId.current) {
+          activeCameraTouchId.current = null;
+          isDraggingCamera.current = false;
+          break;
+        }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -155,6 +256,10 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
     window.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('touchstart', handleTouchStart, { passive: true });
+    window.addEventListener('touchmove', handleTouchMove, { passive: true });
+    window.addEventListener('touchend', handleTouchEnd, { passive: true });
+    window.addEventListener('touchcancel', handleTouchEnd, { passive: true });
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
@@ -163,6 +268,10 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
       window.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchEnd);
     };
   }, [isSitting, seatIndex]);
 
@@ -282,7 +391,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
       playerRef.current.position.copy(pos.current);
       playerRef.current.rotation.y = rotY.current;
 
-      // Cinematic couple camera view when sitting (optimally centers the cinema screen and keeps avatar heads at bottom)
+      // Cinematic couple camera view when sitting
       const targetCamPos = new THREE.Vector3(0, 2.5, pos.current.z + 4.2);
       const lookAtPos = new THREE.Vector3(0, 4.6, -9.5); // Cinema screen center
       camera.position.lerp(targetCamPos, delta * 3.5);
@@ -290,7 +399,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
       return;
     }
 
-    // Calculate movement input
+    // Calculate raw input
     let moveX = 0;
     let moveZ = 0;
 
@@ -299,13 +408,26 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
     if (keys.current['KeyA'] || keys.current['ArrowLeft']) moveX -= 1;
     if (keys.current['KeyD'] || keys.current['ArrowRight']) moveX += 1;
 
-    // Combine mobile joystick input
-    if (Math.abs(mobileJoystickVector.x) > 0.1 || Math.abs(mobileJoystickVector.y) > 0.1) {
+    // Combine mobile joystick input (y < 0 is forward)
+    if (Math.abs(mobileJoystickVector.x) > 0.08 || Math.abs(mobileJoystickVector.y) > 0.08) {
       moveX += mobileJoystickVector.x;
       moveZ += mobileJoystickVector.y;
     }
 
-    const isMoving = Math.abs(moveX) > 0.05 || Math.abs(moveZ) > 0.05;
+    // Convert input relative to camera yaw (intuitive 3rd-person gaming controls)
+    const forwardX = -Math.sin(cameraYaw.current);
+    const forwardZ = -Math.cos(cameraYaw.current);
+    const rightX = Math.cos(cameraYaw.current);
+    const rightZ = -Math.sin(cameraYaw.current);
+
+    const inputForward = -moveZ;
+    const inputRight = moveX;
+
+    const worldMoveX = rightX * inputRight + forwardX * inputForward;
+    const worldMoveZ = rightZ * inputRight + forwardZ * inputForward;
+
+    const moveMagnitude = Math.hypot(worldMoveX, worldMoveZ);
+    const isMoving = moveMagnitude > 0.05;
     const isRunning = keys.current['ShiftLeft'] || keys.current['ShiftRight'] || mobileRunPressed;
 
     // Jump Physics
@@ -328,10 +450,12 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
 
     if (isMoving) {
       const speed = isRunning ? 5.8 : 3.4;
-      const moveVec = new THREE.Vector2(moveX, moveZ).normalize().multiplyScalar(speed * delta);
+      const normalizedMagnitude = Math.min(1, moveMagnitude);
+      const moveVecX = (worldMoveX / moveMagnitude) * speed * normalizedMagnitude * delta;
+      const moveVecZ = (worldMoveZ / moveMagnitude) * speed * normalizedMagnitude * delta;
 
-      pos.current.x += moveVec.x;
-      pos.current.z += moveVec.y;
+      pos.current.x += moveVecX;
+      pos.current.z += moveVecZ;
 
       // Smart Zone & Door Collision Clamping
       const inStreet = pos.current.z >= 11.0;
@@ -357,27 +481,30 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
         }
       }
 
-      // Rotate towards movement direction
-      const targetAngle = Math.atan2(moveVec.x, moveVec.y);
+      // Rotate towards movement direction smoothly
+      const targetAngle = Math.atan2(worldMoveX, worldMoveZ);
       rotY.current = THREE.MathUtils.lerp(rotY.current, targetAngle, delta * 14);
 
       currentAnim = isRunning ? 'RUN' : 'WALK';
     }
 
-    // Direct 3D mesh update (no React re-render)
+    // Direct 3D mesh update
     playerRef.current.position.copy(pos.current);
     playerRef.current.rotation.y = rotY.current;
 
-    // Camera follow strictly follows local player position
-    const offsetX = Math.sin(cameraYaw.current) * cameraDistance.current;
-    const offsetZ = Math.cos(cameraYaw.current) * cameraDistance.current;
+    // Full 360 Spherical Camera Follow around local player
+    const horizDist = cameraDistance.current * Math.cos(cameraPitch.current);
+    const vertOffset = cameraHeight.current + cameraDistance.current * Math.sin(cameraPitch.current);
+
+    const offsetX = Math.sin(cameraYaw.current) * horizDist;
+    const offsetZ = Math.cos(cameraYaw.current) * horizDist;
     const targetCameraPos = new THREE.Vector3(
       pos.current.x + offsetX,
-      pos.current.y + cameraHeight.current,
+      pos.current.y + vertOffset,
       pos.current.z + offsetZ
     );
 
-    camera.position.lerp(targetCameraPos, delta * 6);
+    camera.position.lerp(targetCameraPos, delta * 7);
     camera.lookAt(pos.current.x, pos.current.y + 1.25, pos.current.z);
 
     if (localAnimationState !== currentAnim) {

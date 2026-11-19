@@ -51,7 +51,7 @@ export const ScreenGestureOverlay: React.FC = () => {
     };
   }, []);
 
-  if (!currentMovie) return null;
+  if (!currentMovie || !isSitting) return null;
 
   const triggerFeedback = (type: 'PLAY' | 'PAUSE' | 'REWIND' | 'FORWARD' | 'FAST_FORWARD') => {
     setGestureFeedback({ type, id: Date.now() });
