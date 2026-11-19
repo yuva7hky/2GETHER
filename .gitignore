@@ -41,3 +41,8 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+
+
+# Ignore all environment-specific files
+.env.*
+!.env.example

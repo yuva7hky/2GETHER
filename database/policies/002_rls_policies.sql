@@ -121,3 +121,4 @@ WITH CHECK (
     auth.uid() = sender_id 
     AND public.is_room_participant(room_id)
 );
+

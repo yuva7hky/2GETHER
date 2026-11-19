@@ -30,6 +30,7 @@ export interface PlayerTransform {
 export interface RoomPlayer {
   socketId: string;
   userId: string;
+  playerId: string;
   characterName: string;
   characterData: CharacterAppearance;
   isHost: boolean;
@@ -39,6 +40,7 @@ export interface RoomPlayer {
   seatIndex: number | null;
   connected: boolean;
   joinedAt: number;
+  lastSeq?: number;
 }
 
 export interface MovieMetadata {
@@ -68,8 +70,29 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface UploadState {
+  isUploading: boolean;
+  progress: number;
+  speed: string;
+  eta: string;
+  fileName: string;
+  fileSize: number;
+  error: string | null;
+  errorDetails: string | null;
+}
+
+export interface TheatreQuestState {
+  keyLamppostIndex: number;
+  keyPickedBy: string | null;
+  keyPickedByName: string | null;
+  isPressurePlateActive: boolean;
+  pressurePlatePlayerId: string | null;
+  isDoorUnlocked: boolean;
+}
+
 export interface UserProfile {
   userId: string;
+  playerId: string;
   characterName: string;
   appearance: CharacterAppearance;
 }

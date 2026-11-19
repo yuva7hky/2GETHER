@@ -37,14 +37,29 @@ export const ScreenMesh: React.FC = () => {
     texture.minFilter = THREE.LinearFilter;
     texture.magFilter = THREE.LinearFilter;
     texture.format = THREE.RGBAFormat;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    texture.generateMipmaps = false;
 
     setVideoElement(vid);
     setVideoTexture(texture);
+    useAppStore.getState().setActiveVideoElement(vid);
+
+    vid.onloadedmetadata = () => {
+      if (vid.duration && !isNaN(vid.duration)) {
+        useAppStore.getState().setMovieDuration(vid.duration);
+      }
+    };
+
+    vid.ontimeupdate = () => {
+      useAppStore.getState().setMovieTime(vid.currentTime);
+    };
 
     return () => {
       vid.pause();
       vid.src = '';
       texture.dispose();
+      useAppStore.getState().setActiveVideoElement(null);
     };
   }, [currentMovie?.playbackUrl]);
 
@@ -163,7 +178,7 @@ export const ScreenMesh: React.FC = () => {
         distance={18}
       />
 
-      {/* Overhead Projector Spotlight pointing at screen from behind audience */}
+      {/* Overhead Projector Spotlight pointing at screen from behind audience (no shadow casting to prevent acne) */}
       <spotLight
         ref={projectorLightRef}
         position={[0, 4.5, 12]}
@@ -172,8 +187,9 @@ export const ScreenMesh: React.FC = () => {
         intensity={1.2}
         angle={Math.PI / 6}
         penumbra={0.8}
-        castShadow
+        castShadow={false}
       />
     </group>
   );
 };
+

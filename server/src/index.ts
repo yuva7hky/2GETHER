@@ -8,15 +8,24 @@ import { apiLimiter } from './middleware/rateLimiter.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { roomRoutes } from './routes/roomRoutes.js';
 import { movieRoutes } from './routes/movieRoutes.js';
+import { profileRoutes } from './routes/profileRoutes.js';
 import { setupSocketHandler } from './socket/socketHandler.js';
 
 const app = express();
 const server = http.createServer(app);
 
+const allowedOrigins = [
+  config.CLIENT_URL,
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:4000',
+  'http://127.0.0.1:4000',
+].filter(Boolean);
+
 // Socket.IO configuration with CORS
 const io = new Server(server, {
   cors: {
-    origin: [config.CLIENT_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: allowedOrigins,
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -30,7 +39,7 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: [config.CLIENT_URL, 'http://localhost:5173', 'http://127.0.0.1:5173'],
+  origin: allowedOrigins,
   credentials: true,
 }));
 
@@ -57,6 +66,7 @@ app.get('/api/health', (req, res) => {
 // Routes
 app.use('/api/rooms', roomRoutes);
 app.use('/api/movies', movieRoutes);
+app.use('/api/profiles', profileRoutes);
 
 // Error Handling Middleware
 app.use(errorHandler);
@@ -76,7 +86,7 @@ function handleShutdown(signal: string) {
 process.on('SIGTERM', () => handleShutdown('SIGTERM'));
 process.on('SIGINT', () => handleShutdown('SIGINT'));
 
-server.listen(config.PORT, () => {
+server.listen(config.PORT, '0.0.0.0', () => {
   console.log(`
   ==============================================================
    🎬 2GETHER Server Running
@@ -89,3 +99,4 @@ server.listen(config.PORT, () => {
   ==============================================================
   `);
 });
+

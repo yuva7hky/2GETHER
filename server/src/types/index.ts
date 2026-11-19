@@ -20,6 +20,7 @@ export interface PlayerTransform {
 export interface RoomPlayer {
   socketId: string;
   userId: string;
+  playerId: string;
   characterName: string;
   characterData: CharacterAppearance;
   isHost: boolean;
@@ -29,6 +30,7 @@ export interface RoomPlayer {
   seatIndex: number | null;
   connected: boolean;
   joinedAt: number;
+  lastSeq?: number;
 }
 
 export interface MovieMetadata {
@@ -58,14 +60,26 @@ export interface ChatMessage {
   timestamp: number;
 }
 
+export interface TheatreQuestState {
+  keyLamppostIndex: number;
+  keyPickedBy: string | null;
+  keyPickedByName: string | null;
+  isPressurePlateActive: boolean;
+  pressurePlatePlayerId: string | null;
+  isDoorUnlocked: boolean;
+}
+
 export interface RoomSession {
   roomCode: string;
   hostId: string;
+  hostPlayerId: string;
   guestId: string | null;
+  guestPlayerId: string | null;
   state: RoomState;
-  players: Map<string, RoomPlayer>; // key: socketId or userId
+  players: Map<string, RoomPlayer>; // key: playerId
   movie: MovieMetadata | null;
   syncState: MovieSyncState;
+  quest: TheatreQuestState;
   createdAt: number;
   lastActiveAt: number;
 }

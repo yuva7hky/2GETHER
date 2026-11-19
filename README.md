@@ -134,3 +134,4 @@ Open your browser at `http://localhost:5173`.
 9. Open the Chat drawer to whisper sweet messages in real time.
 10. If a 3rd incognito tab attempts to enter with the same room code, the server strictly rejects the connection with:
    *"This private theatre room is already at maximum capacity (STRICTLY 2 players)."*
+

@@ -1,7 +1,8 @@
-import React, { useRef } from 'react';
+import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Text, Float } from '@react-three/drei';
+import { Text, Float, Billboard } from '@react-three/drei';
 import * as THREE from 'three';
+import { useAppStore } from '../store/useAppStore';
 import { CharacterAppearance, CharacterAnimationState } from '../types';
 
 interface StylizedAvatarProps {
@@ -31,41 +32,38 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
   const leftEarRef = useRef<THREE.Mesh>(null);
   const rightEarRef = useRef<THREE.Mesh>(null);
 
-  // Materials derived from appearance
-  const skinMat = new THREE.MeshStandardMaterial({
-    color: appearance.skinColor || '#fbcfe8',
-    roughness: 0.4,
-  });
+  // Live WebRTC Voice Activity state
+  const isLocalSpeaking = useAppStore((state) => state.isLocalSpeaking);
+  const isRemoteSpeaking = useAppStore((state) => state.isRemoteSpeaking);
+  const isSpeaking = isLocal ? isLocalSpeaking : isRemoteSpeaking;
 
-  const hairMat = new THREE.MeshStandardMaterial({
-    color: appearance.hairColor || '#3b0764',
-    roughness: 0.5,
-  });
+  // Memoized materials derived from appearance
+  const skinMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: appearance.skinColor || '#fbcfe8', roughness: 0.4 }),
+    [appearance.skinColor]
+  );
 
-  const clothesMat = new THREE.MeshStandardMaterial({
-    color: appearance.clothingColor || '#ec4899',
-    roughness: 0.3,
-  });
+  const hairMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: appearance.hairColor || '#3b0764', roughness: 0.5 }),
+    [appearance.hairColor]
+  );
 
-  const blushMat = new THREE.MeshBasicMaterial({
-    color: '#fb7185',
-    transparent: true,
-    opacity: 0.65,
-  });
+  const clothesMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: appearance.clothingColor || '#ec4899', roughness: 0.3 }),
+    [appearance.clothingColor]
+  );
 
-  const eyeMat = new THREE.MeshBasicMaterial({
-    color: '#0f172a',
-  });
+  const blushMat = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: '#fb7185', transparent: true, opacity: 0.65 }),
+    []
+  );
 
-  const eyeHighlightMat = new THREE.MeshBasicMaterial({
-    color: '#ffffff',
-  });
-
-  const goldMat = new THREE.MeshStandardMaterial({
-    color: '#f59e0b',
-    metalness: 0.8,
-    roughness: 0.2,
-  });
+  const eyeMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#0f172a' }), []);
+  const eyeHighlightMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#ffffff' }), []);
+  const goldMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: '#f59e0b', metalness: 0.8, roughness: 0.2 }),
+    []
+  );
 
   // Procedural Animation Loop
   useFrame((state, delta) => {
@@ -144,31 +142,38 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
 
   return (
     <group ref={groupRef}>
-      {/* Floating Name Tag */}
+      {/* Floating Name Tag (Clean text only, Billboard to always face camera, short & compact) */}
       {showNameTag && (
-        <group position={[0, 1.85, 0]}>
-          <Float speed={2} rotationIntensity={0} floatIntensity={0.2}>
-            {/* Pill Background */}
-            <mesh position={[0, 0, -0.02]}>
-              <planeGeometry args={[Math.max(name.length * 0.14 + 0.4, 1.2), 0.34]} />
-              <meshBasicMaterial 
-                color={isLocal ? '#3b0764' : '#1e1b4b'} 
-                transparent 
-                opacity={0.85} 
-                side={THREE.DoubleSide}
-              />
-            </mesh>
+        <group position={[0, isSitting ? 1.48 : (isLocal ? 1.70 : 1.78), 0]}>
+          <Billboard follow={true} lockX={false} lockY={false} lockZ={false}>
+            {/* Speaking Waves Indicator Badge */}
+            {isSpeaking && (
+              <group position={[0, 0.16, 0]}>
+                <Text
+                  fontSize={0.09}
+                  color="#38bdf8"
+                  anchorX="center"
+                  anchorY="middle"
+                  outlineWidth={0.012}
+                  outlineColor="#082f49"
+                >
+                  🎙️ 〰️
+                </Text>
+              </group>
+            )}
+
             <Text
-              color={isLocal ? '#fef08a' : '#fbcfe8'}
-              fontSize={0.16}
+              color={isSpeaking ? '#38bdf8' : isLocal ? '#fef08a' : '#fbcfe8'}
+              fontSize={0.11}
               anchorX="center"
               anchorY="middle"
-              outlineWidth={0.02}
-              outlineColor="#090514"
+              outlineWidth={0.016}
+              outlineColor="#0f051d"
+              letterSpacing={0.02}
             >
-              {name} {isLocal ? '(You)' : '♥'}
+              {name.length > 8 ? `${name.substring(0, 8)}..` : name} {isLocal ? '(You)' : '♥'}
             </Text>
-          </Float>
+          </Billboard>
         </group>
       )}
 
@@ -309,3 +314,4 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
     </group>
   );
 };
+

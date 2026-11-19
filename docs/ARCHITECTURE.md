@@ -117,3 +117,4 @@ sequenceDiagram
 - [x] CORS whitelist restricted to authorized frontend origins.
 - [x] Automatic 30-minute room garbage collection.
 - [x] Hard file upload size ceiling at 700MB.
+

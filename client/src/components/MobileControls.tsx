@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Play, ArrowUp, Armchair } from 'lucide-react';
+import { Play, ArrowUp, Armchair, Key, DoorOpen } from 'lucide-react';
 
 interface MobileControlsProps {
   onVectorChange: (vec: { x: number; y: number }) => void;
@@ -7,6 +7,10 @@ interface MobileControlsProps {
   onJumpTrigger: () => void;
   onSitTrigger: () => void;
   isSitting?: boolean;
+  canPickupKey?: boolean;
+  canUnlockDoor?: boolean;
+  onPickupKey?: () => void;
+  onUnlockDoor?: () => void;
 }
 
 export const MobileControls: React.FC<MobileControlsProps> = ({
@@ -15,6 +19,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   onJumpTrigger,
   onSitTrigger,
   isSitting = false,
+  canPickupKey = false,
+  canUnlockDoor = false,
+  onPickupKey,
+  onUnlockDoor,
 }) => {
   const joystickBaseRef = useRef<HTMLDivElement>(null);
   const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
@@ -89,8 +97,30 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
         />
       </div>
 
-      {/* Action Buttons: Run, Jump, Sit */}
+      {/* Action Buttons: Quest, Run, Jump, Sit */}
       <div className="flex flex-col gap-3 pointer-events-auto items-end">
+        {/* Contextual Quest Key Pickup Button */}
+        {canPickupKey && (
+          <button
+            onClick={onPickupKey}
+            className="w-14 h-14 rounded-full bg-theatre-gold border-2 border-yellow-200 text-theatre-darkest flex items-center justify-center backdrop-blur-md font-bold shadow-glow-gold active:scale-95 animate-bounce"
+            title="Pick Up Key"
+          >
+            <Key className="w-7 h-7" />
+          </button>
+        )}
+
+        {/* Contextual Quest Unlock Door Button */}
+        {canUnlockDoor && (
+          <button
+            onClick={onUnlockDoor}
+            className="w-14 h-14 rounded-full bg-emerald-500 border-2 border-emerald-300 text-white flex items-center justify-center backdrop-blur-md font-bold shadow-glow-green active:scale-95 animate-bounce"
+            title="Unlock Door"
+          >
+            <DoorOpen className="w-7 h-7" />
+          </button>
+        )}
+
         {/* Sit / Stand Button */}
         <button
           onClick={onSitTrigger}
@@ -129,3 +159,4 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
     </div>
   );
 };
+

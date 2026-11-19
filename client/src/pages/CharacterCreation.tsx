@@ -4,6 +4,7 @@ import { OrbitControls, Center, Float } from '@react-three/drei';
 import { Sparkles, ArrowLeft, Check, Heart, User, Palette } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { StylizedAvatar } from '../characters/StylizedAvatar';
+import { apiUrl } from '../services/apiConfig';
 import { CharacterAppearance } from '../types';
 
 export const CharacterCreation: React.FC = () => {
@@ -63,6 +64,24 @@ export const CharacterCreation: React.FC = () => {
       skinColor,
       accessory,
     });
+
+    // Asynchronously save profile to backend / Supabase
+    fetch(apiUrl('/api/profiles'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: profile.userId,
+        display_name: trimmed,
+        avatar_config: {
+          colorScheme: 'custom',
+          clothingColor,
+          hairColor,
+          skinColor,
+          accessory,
+          eyeStyle: 'sparkle',
+        },
+      }),
+    }).catch((err) => console.warn('[CharacterCreation] Profile API sync notice:', err.message));
 
     setSavedToast(true);
     setTimeout(() => {
@@ -294,3 +313,4 @@ export const CharacterCreation: React.FC = () => {
     </div>
   );
 };
+

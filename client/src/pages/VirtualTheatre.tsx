@@ -20,6 +20,11 @@ import { MobileControls } from '../components/MobileControls';
 import { ChatDrawer } from '../components/ChatDrawer';
 import { MoviePlayerOverlay } from '../components/MoviePlayerOverlay';
 import { SettingsModal } from '../components/SettingsModal';
+import { ScreenGestureOverlay } from '../components/ScreenGestureOverlay';
+import { VoiceMicButton } from '../components/VoiceMicButton';
+import { QuestBanner } from '../components/QuestBanner';
+import { RotatePromptOverlay } from '../components/RotatePromptOverlay';
+import { apiUrl } from '../services/apiConfig';
 
 export const VirtualTheatre: React.FC = () => {
   const setView = useAppStore((state) => state.setView);
@@ -31,6 +36,7 @@ export const VirtualTheatre: React.FC = () => {
   const seatIndex = useAppStore((state) => state.seatIndex);
   const unreadCount = useAppStore((state) => state.unreadCount);
   const leaveRoom = useAppStore((state) => state.leaveRoom);
+  const uploadState = useAppStore((state) => state.uploadState);
 
   // UI state
   const [isChatOpen, setIsChatOpen] = useState(false);
@@ -38,9 +44,13 @@ export const VirtualTheatre: React.FC = () => {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
 
-  // Proximity to seat
+  // Proximity to seat & quest items
   const [canSitPrompt, setCanSitPrompt] = useState(false);
   const [suggestedSeatIndex, setSuggestedSeatIndex] = useState<number | null>(null);
+  const [canPickupKey, setCanPickupKey] = useState(false);
+  const [canUnlockDoor, setCanUnlockDoor] = useState(false);
+  const [pickupKeyTrigger, setPickupKeyTrigger] = useState(false);
+  const [unlockDoorTrigger, setUnlockDoorTrigger] = useState(false);
 
   // Mobile controller vectors & triggers
   const [mobileVec, setMobileVec] = useState({ x: 0, y: 0 });
@@ -48,10 +58,49 @@ export const VirtualTheatre: React.FC = () => {
   const [mobileJumpTrigger, setMobileJumpTrigger] = useState(false);
   const [mobileSitTrigger, setMobileSitTrigger] = useState(false);
 
-  // Ensure socket is joined and in theatre
+  // Ensure socket is joined, in theatre, and load current movie if attached
   useEffect(() => {
     socketService.enterTheatre();
-  }, []);
+
+    if (roomCode) {
+      const profile = useAppStore.getState().profile;
+      const userId = profile.userId || profile.playerId;
+      fetch(apiUrl(`/api/movies/${roomCode}/playback-url?userId=${encodeURIComponent(userId)}`))
+        .then((res) => {
+          if (!res.ok) return null;
+          return res.json();
+        })
+        .then((data) => {
+          if (data?.success && data.hasMovie && data.movie) {
+            useAppStore.getState().setMovie(data.movie);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [roomCode]);
+
+  // Emergency R2 storage cleanup on browser tab close / window unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (roomCode && isHost) {
+        const cleanupUrl = apiUrl(`/api/movies/${roomCode}/cleanup`);
+        const payload = JSON.stringify({ userId: localPlayer?.userId });
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon(cleanupUrl, payload);
+        } else {
+          fetch(cleanupUrl, {
+            method: 'POST',
+            keepalive: true,
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+          }).catch(() => {});
+        }
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [roomCode, isHost, localPlayer?.userId]);
 
   const handleCopyCode = () => {
     if (!roomCode) return;
@@ -61,6 +110,16 @@ export const VirtualTheatre: React.FC = () => {
   };
 
   const handleLeaveTheatre = () => {
+    if (roomCode) {
+      if (isHost) {
+        fetch(apiUrl(`/api/movies/${roomCode}/cleanup`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: localPlayer?.userId }),
+        }).catch(() => {});
+      }
+      socketService.leaveRoom();
+    }
     leaveRoom();
     setView('DASHBOARD');
   };
@@ -115,11 +174,22 @@ export const VirtualTheatre: React.FC = () => {
           {/* Movie Projector Button */}
           <button
             onClick={() => setIsMoviePlayerOpen(true)}
-            className="px-4 py-2 rounded-2xl glass-panel-gold hover:brightness-110 active:scale-95 transition flex items-center gap-2 text-xs font-bold text-white shadow-glow-gold border border-theatre-gold/40"
+            className={`px-4 py-2 rounded-2xl glass-panel-gold hover:brightness-110 active:scale-95 transition flex items-center gap-2 text-xs font-bold text-white shadow-glow-gold border ${
+              uploadState.isUploading ? 'border-amber-400 bg-amber-500/20 shadow-[0_0_15px_#f59e0b]' : 'border-theatre-gold/40'
+            }`}
           >
             <Film className="w-4 h-4 text-theatre-gold" />
-            <span className="hidden md:inline">{isHost ? 'Projector / Upload' : 'Cinema Stream'}</span>
+            <span className="hidden md:inline">
+              {uploadState.isUploading
+                ? `Uploading ${uploadState.progress}%`
+                : isHost
+                ? 'Projector / Upload'
+                : 'Cinema Stream'}
+            </span>
           </button>
+
+          {/* WebRTC Voice Mic Button (Tap to Mute / Hold for Push-to-Talk) */}
+          <VoiceMicButton />
 
           {/* Chat Button with unread counter */}
           <button
@@ -155,6 +225,21 @@ export const VirtualTheatre: React.FC = () => {
         </div>
       </header>
 
+      {/* 1.5 TOP CO-OP QUEST GUIDANCE BANNER */}
+      <QuestBanner
+        onOpenUpload={() => setIsMoviePlayerOpen(true)}
+        canPickupKey={canPickupKey}
+        canUnlockDoor={canUnlockDoor}
+        onPickupKey={() => {
+          setPickupKeyTrigger(true);
+          setTimeout(() => setPickupKeyTrigger(false), 150);
+        }}
+        onUnlockDoor={() => {
+          setUnlockDoorTrigger(true);
+          setTimeout(() => setUnlockDoorTrigger(false), 150);
+        }}
+      />
+
       {/* 2. BOTTOM DESKTOP INTERACTION PILL */}
       <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 pointer-events-none hidden md:flex items-center gap-3">
         <div className="glass-panel px-5 py-2.5 rounded-full flex items-center gap-4 text-xs text-slate-300 border border-white/10 shadow-glass">
@@ -175,16 +260,29 @@ export const VirtualTheatre: React.FC = () => {
           <span className="text-white/20">•</span>
           <span className="flex items-center gap-1.5">
             <kbd className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold ${
-              isSitting || canSitPrompt ? 'bg-theatre-gold text-theatre-darkest' : 'bg-white/10 text-white'
+              canPickupKey || canUnlockDoor || isSitting || canSitPrompt
+                ? 'bg-theatre-gold text-theatre-darkest shadow-glow-gold'
+                : 'bg-white/10 text-white'
             }`}>
               E
             </kbd>
-            <span className={canSitPrompt ? 'text-theatre-gold font-bold' : ''}>
-              {isSitting ? 'Stand Up' : 'Sit Together'}
+            <span className={canPickupKey || canUnlockDoor || canSitPrompt ? 'text-theatre-gold font-bold' : ''}>
+              {canPickupKey
+                ? 'Pick Up Key 🗝️'
+                : canUnlockDoor
+                ? 'Unlock Doors 🚪'
+                : isSitting
+                ? 'Stand Up'
+                : canSitPrompt
+                ? 'Sit Together'
+                : 'Interact'}
             </span>
           </span>
         </div>
       </div>
+
+      {/* 2.5 INTERACTIVE TOUCH & GESTURE CINEMA SCREEN OVERLAY */}
+      <ScreenGestureOverlay />
 
       {/* 3. 3D WEBGL THEATRE CANVAS */}
       <Canvas
@@ -196,12 +294,34 @@ export const VirtualTheatre: React.FC = () => {
 
         {/* 3D Theatre Architecture & Screen */}
         <TheatreScene
-          leftSeatOccupied={seatIndex === 0 || otherPlayer?.seatIndex === 0}
-          rightSeatOccupied={seatIndex === 1 || otherPlayer?.seatIndex === 1}
-          leftOccupantName={seatIndex === 0 ? localPlayer?.characterName : otherPlayer?.seatIndex === 0 ? otherPlayer.characterName : undefined}
-          rightOccupantName={seatIndex === 1 ? localPlayer?.characterName : otherPlayer?.seatIndex === 1 ? otherPlayer.characterName : undefined}
+          leftSeatOccupied={Boolean((isSitting && seatIndex === 0) || (otherPlayer?.isSitting && otherPlayer?.seatIndex === 0))}
+          rightSeatOccupied={Boolean((isSitting && seatIndex === 1) || (otherPlayer?.isSitting && otherPlayer?.seatIndex === 1))}
+          leftOccupantName={
+            isSitting && seatIndex === 0
+              ? localPlayer?.characterName
+              : otherPlayer?.isSitting && otherPlayer?.seatIndex === 0
+              ? otherPlayer.characterName
+              : undefined
+          }
+          rightOccupantName={
+            isSitting && seatIndex === 1
+              ? localPlayer?.characterName
+              : otherPlayer?.isSitting && otherPlayer?.seatIndex === 1
+              ? otherPlayer.characterName
+              : undefined
+          }
           canSitPrompt={canSitPrompt && !isSitting}
           suggestedSeatIndex={suggestedSeatIndex}
+          canPickupKey={canPickupKey}
+          canUnlockDoor={canUnlockDoor}
+          onPickupKey={() => {
+            setPickupKeyTrigger(true);
+            setTimeout(() => setPickupKeyTrigger(false), 150);
+          }}
+          onUnlockDoor={() => {
+            setUnlockDoorTrigger(true);
+            setTimeout(() => setUnlockDoorTrigger(false), 150);
+          }}
         />
 
         {/* Local Controllable Player */}
@@ -214,6 +334,10 @@ export const VirtualTheatre: React.FC = () => {
             setCanSitPrompt(canSit);
             setSuggestedSeatIndex(idx);
           }}
+          onCanPickupKeyChanged={setCanPickupKey}
+          onCanUnlockDoorChanged={setCanUnlockDoor}
+          pickupKeyTrigger={pickupKeyTrigger}
+          unlockDoorTrigger={unlockDoorTrigger}
         />
 
         {/* Remote Partner Player */}
@@ -233,6 +357,16 @@ export const VirtualTheatre: React.FC = () => {
           setTimeout(() => setMobileSitTrigger(false), 150);
         }}
         isSitting={isSitting}
+        canPickupKey={canPickupKey}
+        canUnlockDoor={canUnlockDoor}
+        onPickupKey={() => {
+          setPickupKeyTrigger(true);
+          setTimeout(() => setPickupKeyTrigger(false), 150);
+        }}
+        onUnlockDoor={() => {
+          setUnlockDoorTrigger(true);
+          setTimeout(() => setUnlockDoorTrigger(false), 150);
+        }}
       />
 
       {/* 5. SLIDE-OUT CHAT DRAWER */}
@@ -243,6 +377,10 @@ export const VirtualTheatre: React.FC = () => {
 
       {/* 7. SETTINGS MODAL */}
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+
+      {/* 8. MOBILE ROTATE TO LANDSCAPE PROMPT OVERLAY */}
+      <RotatePromptOverlay />
     </div>
   );
 };
+

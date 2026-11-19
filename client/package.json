@@ -11,6 +11,7 @@
   "dependencies": {
     "@react-three/drei": "^9.117.3",
     "@react-three/fiber": "^8.17.10",
+    "@supabase/supabase-js": "^2.119.0",
     "2gether-workspace": "file:..",
     "canvas-confetti": "^1.9.4",
     "clsx": "^2.1.1",

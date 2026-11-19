@@ -2,6 +2,7 @@ import React from 'react';
 import * as THREE from 'three';
 import { ScreenMesh } from './ScreenMesh';
 import { CoupleSeats } from './CoupleSeats';
+import { OutdoorStreetScene } from './OutdoorStreetScene';
 
 interface TheatreSceneProps {
   leftSeatOccupied?: boolean;
@@ -10,6 +11,10 @@ interface TheatreSceneProps {
   rightOccupantName?: string;
   canSitPrompt?: boolean;
   suggestedSeatIndex?: number | null;
+  canPickupKey?: boolean;
+  canUnlockDoor?: boolean;
+  onPickupKey?: () => void;
+  onUnlockDoor?: () => void;
 }
 
 export const TheatreScene: React.FC<TheatreSceneProps> = ({
@@ -19,6 +24,10 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
   rightOccupantName,
   canSitPrompt = false,
   suggestedSeatIndex = null,
+  canPickupKey = false,
+  canUnlockDoor = false,
+  onPickupKey,
+  onUnlockDoor,
 }) => {
   const wallMat = new THREE.MeshStandardMaterial({
     color: '#130d24',
@@ -83,8 +92,25 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
         <primitive object={wallMat} />
       </mesh>
 
-      {/* Back Wall (Entrance Wall) */}
-      <mesh position={[0, 4.75, 11]} rotation={[0, Math.PI, 0]} receiveShadow>
+      {/* Back Wall with open doorway arch leading to outdoor street */}
+      {/* Left Wall Section */}
+      <mesh position={[-5.6, 4.75, 11]} rotation={[0, Math.PI, 0]} receiveShadow>
+        <planeGeometry args={[6.8, 9.5]} />
+        <primitive object={wallMat} />
+      </mesh>
+      {/* Right Wall Section */}
+      <mesh position={[5.6, 4.75, 11]} rotation={[0, Math.PI, 0]} receiveShadow>
+        <planeGeometry args={[6.8, 9.5]} />
+        <primitive object={wallMat} />
+      </mesh>
+      {/* Top Header Section above Doorway */}
+      <mesh position={[0, 6.6, 11]} rotation={[0, Math.PI, 0]} receiveShadow>
+        <planeGeometry args={[4.4, 5.8]} />
+        <primitive object={wallMat} />
+      </mesh>
+
+      {/* Front Wall (Behind Screen) */}
+      <mesh position={[0, 4.75, -10.8]} receiveShadow>
         <planeGeometry args={[18, 9.5]} />
         <primitive object={wallMat} />
       </mesh>
@@ -95,39 +121,13 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
         <meshStandardMaterial color="#201235" roughness={0.7} />
       </mesh>
 
-      {/* 4. ENTRANCE DOUBLE DOORS (At Back Z = 10.9) */}
-      <group position={[0, 1.8, 10.9]}>
-        {/* Door Frame */}
-        <mesh position={[0, 0, 0]}>
-          <boxGeometry args={[3.2, 3.6, 0.2]} />
-          <primitive object={woodPillarMat} />
-        </mesh>
-        {/* Left Door */}
-        <mesh position={[-0.75, 0, 0.05]}>
-          <boxGeometry args={[1.35, 3.4, 0.08]} />
-          <meshStandardMaterial color="#3b0764" roughness={0.4} />
-        </mesh>
-        {/* Right Door */}
-        <mesh position={[0.75, 0, 0.05]}>
-          <boxGeometry args={[1.35, 3.4, 0.08]} />
-          <meshStandardMaterial color="#3b0764" roughness={0.4} />
-        </mesh>
-        {/* Golden Door Handles */}
-        <mesh position={[-0.15, 0, 0.12]}>
-          <cylinderGeometry args={[0.03, 0.03, 0.5, 16]} />
-          <primitive object={goldTrimMat} />
-        </mesh>
-        <mesh position={[0.15, 0, 0.12]}>
-          <cylinderGeometry args={[0.03, 0.03, 0.5, 16]} />
-          <primitive object={goldTrimMat} />
-        </mesh>
-
-        {/* Exit Sign glowing warmly above door */}
-        <mesh position={[0, 2.05, 0.12]}>
-          <boxGeometry args={[1.0, 0.3, 0.05]} />
-          <meshBasicMaterial color="#ec4899" />
-        </mesh>
-      </group>
+      {/* 4. OUTDOOR STREET SCENE, MARQUEE, AND INTERACTIVE DOORS (Z >= 11) */}
+      <OutdoorStreetScene
+        canPickupKey={canPickupKey}
+        canUnlockDoor={canUnlockDoor}
+        onPickupKey={onPickupKey}
+        onUnlockDoor={onUnlockDoor}
+      />
 
       {/* 5. WALL SCONCES & AMBIENT GOLD LIGHTING */}
       {[-7, -3, 1, 5, 9].map((zPos, idx) => (
@@ -183,3 +183,4 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
     </group>
   );
 };
+

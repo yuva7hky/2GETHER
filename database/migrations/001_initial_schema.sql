@@ -132,3 +132,4 @@ CREATE TRIGGER trigger_rooms_updated_at
 BEFORE UPDATE ON public.rooms
 FOR EACH ROW
 EXECUTE FUNCTION public.update_timestamp();
+
