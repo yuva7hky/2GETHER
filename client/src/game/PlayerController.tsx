@@ -57,17 +57,24 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
   const canPickupKeyRef = useRef(false);
   const canUnlockDoorRef = useRef(false);
   const isSteppingOnPlate = useRef(false);
+  const lastCanSit = useRef(false);
+  const lastSeatIdx = useRef<number | null>(null);
 
-  // Camera settings (Full 360 orbit & pitch tilt)
+  // Camera settings (Stable 360 orbit)
   const cameraDistance = useRef<number>(4.6);
   const cameraHeight = useRef<number>(2.4);
   const cameraYaw = useRef<number>(0);
   const cameraPitch = useRef<number>(0);
-  const isDraggingCamera = useRef<boolean>(false);
+
+  // Desktop Mouse Drag
+  const isDraggingMouse = useRef<boolean>(false);
   const lastMouseX = useRef<number>(0);
   const lastMouseY = useRef<number>(0);
-  const activeCameraTouchId = useRef<number | null>(null);
-  const initialPinchDist = useRef<number | null>(null);
+
+  // Dedicated Mobile Touch Drag Look (Completely isolated from mouse)
+  const activeTouchLookId = useRef<number | null>(null);
+  const lastTouchX = useRef<number>(0);
+  const lastTouchY = useRef<number>(0);
 
   // Keyboard state
   const keys = useRef<{ [key: string]: boolean }>({});
@@ -81,12 +88,19 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
     { x: 0.65, y: 0, z: 1.0, seatIndex: 1 },
   ];
 
-  // Setup initial position once
+  // Setup initial position & snap camera immediately to spawn (no initial flying glitch)
   useEffect(() => {
     if (playerRef.current) {
       playerRef.current.position.copy(pos.current);
       playerRef.current.rotation.y = rotY.current;
     }
+    const initialCamPos = new THREE.Vector3(
+      pos.current.x,
+      pos.current.y + cameraHeight.current,
+      pos.current.z + cameraDistance.current
+    );
+    camera.position.copy(initialCamPos);
+    camera.lookAt(pos.current.x, pos.current.y + 1.25, pos.current.z);
   }, []);
 
   const handlePickupKey = () => {
@@ -121,7 +135,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
       cameraDistance.current = THREE.MathUtils.clamp(
         cameraDistance.current + e.deltaY * 0.003,
         2.8,
-        7.2
+        6.5
       );
     };
 
@@ -131,105 +145,77 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
       if (e.button === 0 || e.button === 2) {
         const target = e.target as HTMLElement | null;
         if (target?.closest('button') || target?.closest('[data-no-cam]')) return;
-        isDraggingCamera.current = true;
+        isDraggingMouse.current = true;
         lastMouseX.current = e.clientX;
         lastMouseY.current = e.clientY;
       }
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (isDraggingCamera.current && activeCameraTouchId.current === null) {
-        const deltaX = e.clientX - lastMouseX.current;
-        const deltaY = e.clientY - lastMouseY.current;
-        lastMouseX.current = e.clientX;
-        lastMouseY.current = e.clientY;
+      if (!isDraggingMouse.current || activeTouchLookId.current !== null) return;
+      const rawDeltaX = e.clientX - lastMouseX.current;
+      const rawDeltaY = e.clientY - lastMouseY.current;
+      lastMouseX.current = e.clientX;
+      lastMouseY.current = e.clientY;
 
-        // 360 yaw rotation
-        cameraYaw.current -= deltaX * 0.0055;
-        // Pitch tilt
-        cameraPitch.current = THREE.MathUtils.clamp(
-          cameraPitch.current - deltaY * 0.004,
-          -0.45,
-          0.65
-        );
-      }
+      const deltaX = THREE.MathUtils.clamp(rawDeltaX, -30, 30);
+      const deltaY = THREE.MathUtils.clamp(rawDeltaY, -30, 30);
+
+      cameraYaw.current -= deltaX * 0.005;
+      cameraPitch.current = THREE.MathUtils.clamp(
+        cameraPitch.current - deltaY * 0.0035,
+        -0.40,
+        0.55
+      );
     };
 
     const handleMouseUp = () => {
-      if (activeCameraTouchId.current === null) {
-        isDraggingCamera.current = false;
-      }
+      isDraggingMouse.current = false;
     };
 
-    // Mobile Touch Drag & Pinch-Zoom
+    // Dedicated Mobile Touch Look (Outside bottom-left joystick area)
     const handleTouchStart = (e: TouchEvent) => {
       if (isSitting) return;
 
-      // Handle 2-finger pinch zoom
-      if (e.touches.length === 2) {
-        const dist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-        initialPinchDist.current = dist;
-        return;
-      }
-
-      // Handle single finger camera drag
       for (let i = 0; i < e.changedTouches.length; i++) {
         const t = e.changedTouches[i];
-        if (activeCameraTouchId.current !== null) continue;
+        if (activeTouchLookId.current !== null) continue;
 
-        // Ignore if touching inside joystick zone (bottom-left) or UI buttons
+        // Skip if touch is in joystick zone (bottom-left quadrant) or UI buttons
         const isJoystickZone =
-          t.clientX < window.innerWidth * 0.38 && t.clientY > window.innerHeight * 0.42;
+          t.clientX < window.innerWidth * 0.40 && t.clientY > window.innerHeight * 0.40;
         const target = t.target as HTMLElement | null;
         if (isJoystickZone || target?.closest('button') || target?.closest('[data-no-cam]')) {
           continue;
         }
 
-        activeCameraTouchId.current = t.identifier;
-        lastMouseX.current = t.clientX;
-        lastMouseY.current = t.clientY;
-        isDraggingCamera.current = true;
+        activeTouchLookId.current = t.identifier;
+        lastTouchX.current = t.clientX;
+        lastTouchY.current = t.clientY;
         break;
       }
     };
 
     const handleTouchMove = (e: TouchEvent) => {
-      // Pinch zoom
-      if (e.touches.length === 2 && initialPinchDist.current !== null) {
-        const currentDist = Math.hypot(
-          e.touches[0].clientX - e.touches[1].clientX,
-          e.touches[0].clientY - e.touches[1].clientY
-        );
-        const pinchDelta = initialPinchDist.current - currentDist;
-        cameraDistance.current = THREE.MathUtils.clamp(
-          cameraDistance.current + pinchDelta * 0.012,
-          2.8,
-          7.2
-        );
-        initialPinchDist.current = currentDist;
-        return;
-      }
+      if (activeTouchLookId.current === null) return;
 
-      // Camera look drag
-      if (activeCameraTouchId.current === null) return;
       for (let i = 0; i < e.changedTouches.length; i++) {
         const t = e.changedTouches[i];
-        if (t.identifier === activeCameraTouchId.current) {
-          const deltaX = t.clientX - lastMouseX.current;
-          const deltaY = t.clientY - lastMouseY.current;
-          lastMouseX.current = t.clientX;
-          lastMouseY.current = t.clientY;
+        if (t.identifier === activeTouchLookId.current) {
+          const rawDeltaX = t.clientX - lastTouchX.current;
+          const rawDeltaY = t.clientY - lastTouchY.current;
+          lastTouchX.current = t.clientX;
+          lastTouchY.current = t.clientY;
 
-          // 360 yaw rotation
-          cameraYaw.current -= deltaX * 0.007;
-          // Pitch tilt
+          // Clamped delta to prevent sudden spikes or glitching
+          const deltaX = THREE.MathUtils.clamp(rawDeltaX, -30, 30);
+          const deltaY = THREE.MathUtils.clamp(rawDeltaY, -30, 30);
+
+          cameraYaw.current -= deltaX * 0.006;
           cameraPitch.current = THREE.MathUtils.clamp(
-            cameraPitch.current - deltaY * 0.005,
-            -0.45,
-            0.65
+            cameraPitch.current - deltaY * 0.004,
+            -0.40,
+            0.55
           );
           break;
         }
@@ -237,14 +223,10 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
     };
 
     const handleTouchEnd = (e: TouchEvent) => {
-      if (e.touches.length < 2) {
-        initialPinchDist.current = null;
-      }
-      if (activeCameraTouchId.current === null) return;
+      if (activeTouchLookId.current === null) return;
       for (let i = 0; i < e.changedTouches.length; i++) {
-        if (e.changedTouches[i].identifier === activeCameraTouchId.current) {
-          activeCameraTouchId.current = null;
-          isDraggingCamera.current = false;
+        if (e.changedTouches[i].identifier === activeTouchLookId.current) {
+          activeTouchLookId.current = null;
           break;
         }
       }
@@ -332,7 +314,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
   useFrame((state, delta) => {
     if (!playerRef.current) return;
 
-    // Check proximity to seats for prompt
+    // Check proximity to seats for prompt (guarded to prevent 60fps re-render spam)
     let inSeatRange = false;
     let nearestIdx: number | null = null;
 
@@ -384,7 +366,12 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
         onCanUnlockDoorChanged?.(inUnlockRange);
       }
     }
-    onCanSitChanged?.(inSeatRange, nearestIdx);
+
+    if (inSeatRange !== lastCanSit.current || nearestIdx !== lastSeatIdx.current) {
+      lastCanSit.current = inSeatRange;
+      lastSeatIdx.current = nearestIdx;
+      onCanSitChanged?.(inSeatRange, nearestIdx);
+    }
 
     // If sitting, lock position and frame cinema view
     if (isSitting) {
@@ -394,7 +381,8 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
       // Cinematic couple camera view when sitting
       const targetCamPos = new THREE.Vector3(0, 2.5, pos.current.z + 4.2);
       const lookAtPos = new THREE.Vector3(0, 4.6, -9.5); // Cinema screen center
-      camera.position.lerp(targetCamPos, delta * 3.5);
+      const sitLerp = Math.min(1.0, delta * 3.5);
+      camera.position.lerp(targetCamPos, sitLerp);
       camera.lookAt(lookAtPos);
       return;
     }
@@ -414,7 +402,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
       moveZ += mobileJoystickVector.y;
     }
 
-    // Convert input relative to camera yaw (intuitive 3rd-person gaming controls)
+    // Convert input relative to camera yaw
     const forwardX = -Math.sin(cameraYaw.current);
     const forwardZ = -Math.cos(cameraYaw.current);
     const rightX = Math.cos(cameraYaw.current);
@@ -481,9 +469,12 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
         }
       }
 
-      // Rotate towards movement direction smoothly
+      // Rotate towards movement direction smoothly using shortest angular path (never 360-spin glitch)
       const targetAngle = Math.atan2(worldMoveX, worldMoveZ);
-      rotY.current = THREE.MathUtils.lerp(rotY.current, targetAngle, delta * 14);
+      let angleDiff = targetAngle - rotY.current;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+      rotY.current += angleDiff * Math.min(1.0, delta * 12);
 
       currentAnim = isRunning ? 'RUN' : 'WALK';
     }
@@ -504,7 +495,9 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
       pos.current.z + offsetZ
     );
 
-    camera.position.lerp(targetCameraPos, delta * 7);
+    // Clamped lerpAlpha guarantees no overshooting or oscillating even during mobile frame drops
+    const lerpAlpha = Math.min(1.0, Math.max(0.01, delta * 7));
+    camera.position.lerp(targetCameraPos, lerpAlpha);
     camera.lookAt(pos.current.x, pos.current.y + 1.25, pos.current.z);
 
     if (localAnimationState !== currentAnim) {

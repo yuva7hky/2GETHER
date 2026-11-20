@@ -140,7 +140,7 @@ export const VirtualTheatre: React.FC = () => {
   };
 
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-theatre-darkest select-none">
+    <div className="relative w-screen h-screen overflow-hidden bg-theatre-darkest select-none touch-none">
       {/* 1. TOP FLOATING HUD */}
       <header className="absolute top-4 inset-x-4 z-40 flex items-center justify-between pointer-events-none">
         {/* Left: Brand & Room Status Pill */}
@@ -304,8 +304,8 @@ export const VirtualTheatre: React.FC = () => {
       {/* 3. 3D WEBGL THEATRE CANVAS */}
       <Canvas
         shadows
-        camera={{ position: [0, 3, 8], fov: 50 }}
-        className="w-full h-full cursor-default"
+        camera={{ position: [-1.5, 2.4, 26.6], fov: 50 }}
+        className="w-full h-full cursor-default touch-none"
       >
         <ambientLight intensity={0.65} color="#e0e7ff" />
 

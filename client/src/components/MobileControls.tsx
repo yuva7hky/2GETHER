@@ -36,6 +36,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     if (activeTouchId !== null) return;
     const touch = e.changedTouches[0];
@@ -44,6 +45,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     for (let i = 0; i < e.changedTouches.length; i++) {
       if (e.changedTouches[i].identifier === activeTouchId) {
@@ -54,6 +56,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     for (let i = 0; i < e.changedTouches.length; i++) {
       if (e.changedTouches[i].identifier === activeTouchId) {
