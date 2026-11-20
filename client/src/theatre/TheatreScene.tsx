@@ -201,7 +201,7 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
 
       {/* 5. CRIMSON RED VELVET STAGE CURTAINS (Image 2) */}
       {/* Left Stage Curtain (Rich gathered folds) */}
-      <group position={[-7.4, 4.8, -9.2]}>
+      <group position={[-7.8, 4.8, -9.2]}>
         {/* Main Curtain Body */}
         <mesh material={curtainMat} castShadow>
           <boxGeometry args={[1.8, 8.2, 0.6]} />
@@ -219,7 +219,7 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
       </group>
 
       {/* Right Stage Curtain */}
-      <group position={[7.4, 4.8, -9.2]}>
+      <group position={[7.8, 4.8, -9.2]}>
         {/* Main Curtain Body */}
         <mesh material={curtainMat} castShadow>
           <boxGeometry args={[1.8, 8.2, 0.6]} />
@@ -242,8 +242,8 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
       </mesh>
 
       {/* 6. ACOUSTIC STAGE SPEAKERS (Left & Right - Image 2) */}
-      {/* Left Wall Speaker */}
-      <group position={[-6.2, 4.8, -8.8]}>
+      {/* Left Wall Speaker - Placed on wall so it never overlaps cinema screen */}
+      <group position={[-7.6, 4.8, -8.8]}>
         {/* Speaker Enclosure */}
         <mesh material={speakerMat} castShadow>
           <boxGeometry args={[0.7, 1.4, 0.5]} />
@@ -259,7 +259,7 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
       </group>
 
       {/* Right Wall Speaker */}
-      <group position={[6.2, 4.8, -8.8]}>
+      <group position={[7.6, 4.8, -8.8]}>
         {/* Speaker Enclosure */}
         <mesh material={speakerMat} castShadow>
           <boxGeometry args={[0.7, 1.4, 0.5]} />

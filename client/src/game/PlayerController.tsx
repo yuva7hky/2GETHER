@@ -523,7 +523,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
         z: Number(pos.current.z.toFixed(3)),
         rotY: Number(rotY.current.toFixed(3)),
       };
-      setLocalTransform(transform);
+      // Send directly over WebSockets without triggering React DOM re-renders
       socketService.sendMovement(transform, currentAnim, isSitting, seatIndex);
     }
   });

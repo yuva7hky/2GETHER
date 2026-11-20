@@ -16,12 +16,15 @@ export const ScreenMesh: React.FC = () => {
   const screenRef = useRef<THREE.Mesh>(null);
   const projectorLightRef = useRef<THREE.SpotLight>(null);
 
-  // Setup HTML5 video element when a movie URL is provided
+  // Setup HTML5 video element with mobile hardware decoder stabilization
   useEffect(() => {
     if (!currentMovie?.playbackUrl) {
       if (videoElement) {
         videoElement.pause();
         videoElement.src = '';
+        if (videoElement.parentNode) {
+          videoElement.parentNode.removeChild(videoElement);
+        }
         setVideoElement(null);
         setVideoTexture(null);
         setIsVideoReady(false);
@@ -39,7 +42,23 @@ export const ScreenMesh: React.FC = () => {
     vid.crossOrigin = 'anonymous';
     vid.loop = false;
     vid.playsInline = true;
+    vid.setAttribute('playsinline', 'true');
+    vid.setAttribute('webkit-playsinline', 'true');
+    vid.setAttribute('x5-playsinline', 'true');
+    vid.setAttribute('controlslist', 'nodownload nofullscreen');
     vid.preload = 'auto';
+    vid.muted = true; // Essential for immediate hardware decoder start without browser autoplay restrictions
+
+    // Invisible DOM attachment: on Android/Mobile Chrome, detached video elements suffer from macroblock tiling / black bands
+    vid.style.position = 'fixed';
+    vid.style.top = '0';
+    vid.style.left = '0';
+    vid.style.width = '1px';
+    vid.style.height = '1px';
+    vid.style.opacity = '0.001';
+    vid.style.pointerEvents = 'none';
+    vid.style.zIndex = '-9999';
+    document.body.appendChild(vid);
 
     const texture = new THREE.VideoTexture(vid);
     texture.minFilter = THREE.LinearFilter;
@@ -48,14 +67,26 @@ export const ScreenMesh: React.FC = () => {
     texture.wrapS = THREE.ClampToEdgeWrapping;
     texture.wrapT = THREE.ClampToEdgeWrapping;
     texture.generateMipmaps = false;
+    texture.colorSpace = THREE.SRGBColorSpace;
 
     setVideoElement(vid);
     setVideoTexture(texture);
     useAppStore.getState().setActiveVideoElement(vid);
 
+    let rvfcId: number | null = null;
+    const updateLoop = () => {
+      texture.needsUpdate = true;
+      if ('requestVideoFrameCallback' in vid) {
+        rvfcId = (vid as any).requestVideoFrameCallback(updateLoop);
+      }
+    };
+
     vid.oncanplay = () => {
       setIsVideoReady(true);
       texture.needsUpdate = true;
+      if ('requestVideoFrameCallback' in vid && rvfcId === null) {
+        rvfcId = (vid as any).requestVideoFrameCallback(updateLoop);
+      }
     };
 
     vid.onloadeddata = () => {
@@ -90,8 +121,14 @@ export const ScreenMesh: React.FC = () => {
 
     return () => {
       window.removeEventListener('pointerdown', handleUserInteraction);
+      if (rvfcId !== null && 'cancelVideoFrameCallback' in vid) {
+        (vid as any).cancelVideoFrameCallback(rvfcId);
+      }
       vid.pause();
       vid.src = '';
+      if (vid.parentNode) {
+        vid.parentNode.removeChild(vid);
+      }
       texture.dispose();
       useAppStore.getState().setActiveVideoElement(null);
     };
@@ -104,11 +141,11 @@ export const ScreenMesh: React.FC = () => {
     if (isPlaying) {
       const playPromise = videoElement.play();
       if (playPromise !== undefined) {
-        playPromise.catch((err) => {
-          console.warn('[ScreenMesh] Unmuted autoplay blocked by browser policy. Playing muted first...', err?.message);
+        playPromise.catch(() => {
+          // Fallback to muted playback if autoplay policy blocks unmuted audio
           videoElement.muted = true;
-          videoElement.play().catch((mutedErr) => {
-            console.error('[ScreenMesh] Muted autoplay also failed:', mutedErr);
+          videoElement.play().catch((err) => {
+            console.warn('[ScreenMesh] Autoplay blocked, waiting for tap:', err.message);
           });
         });
       }
@@ -117,19 +154,21 @@ export const ScreenMesh: React.FC = () => {
     }
   }, [isPlaying, videoElement]);
 
-  // Synchronize seek position from store
+  // Synchronize seek from store
   useEffect(() => {
-    if (!videoElement || syncState.currentTime === undefined) return;
+    if (!videoElement || typeof syncState.currentTime !== 'number') return;
     const diff = Math.abs(videoElement.currentTime - syncState.currentTime);
-    if (diff > 1.5) {
+    if (diff > 0.8) {
       videoElement.currentTime = syncState.currentTime;
     }
   }, [syncState.currentTime, videoElement]);
 
-  // Update video texture each frame and projector shimmer
+  // Update video texture each frame fallback and projector shimmer
   useFrame((state) => {
-    if (videoTexture && videoElement && videoElement.readyState >= 2) {
-      videoTexture.needsUpdate = true;
+    if (!('requestVideoFrameCallback' in (videoElement || {}))) {
+      if (videoTexture && videoElement && videoElement.readyState >= 2 && !videoElement.paused) {
+        videoTexture.needsUpdate = true;
+      }
     }
 
     if (projectorLightRef.current) {

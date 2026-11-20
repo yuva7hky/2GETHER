@@ -375,6 +375,7 @@ export const VirtualTheatre: React.FC = () => {
           powerPreference: 'high-performance',
           stencil: false,
           depth: true,
+          precision: 'highp',
         }}
         camera={{ position: [-1.5, 2.4, 26.6], fov: 50 }}
         className="w-full h-full cursor-default touch-none"

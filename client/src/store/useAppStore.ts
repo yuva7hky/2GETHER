@@ -221,14 +221,26 @@ export const useAppStore = create<AppStore>((set) => ({
         return state;
       }
 
+      const prev = state.otherPlayer;
+      const animChanged = prev.animationState !== data.animationState;
+      const sitChanged = prev.isSitting !== data.isSitting || prev.seatIndex !== data.seatIndex;
+
+      // Update transform directly on object for Three.js 60fps useFrame readers
+      prev.transform = data.transform;
+      prev.lastSeq = data.seq || prev.lastSeq || 0;
+
+      // If only coordinates changed (normal walking/running), do NOT trigger React re-renders!
+      // This eliminates mobile CPU jank and brings solid 60 FPS performance.
+      if (!animChanged && !sitChanged) {
+        return state;
+      }
+
       return {
         otherPlayer: {
-          ...state.otherPlayer,
-          transform: data.transform,
+          ...prev,
           animationState: data.animationState,
           isSitting: data.isSitting,
           seatIndex: data.seatIndex,
-          lastSeq: data.seq || state.otherPlayer.lastSeq || 0,
         },
       };
     }),

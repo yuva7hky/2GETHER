@@ -11,6 +11,7 @@ import {
   DeleteObjectsCommand,
   PutBucketCorsCommand,
   HeadObjectCommand,
+  ListPartsCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import path from 'path';
@@ -231,8 +232,30 @@ export class MovieService {
       };
     }
 
+    // Query Cloudflare R2 directly for the authoritative list of uploaded parts and their true ETags!
+    // This completely prevents "InvalidPart" errors when browser direct CORS masked ETag response headers on 500MB uploads.
+    let finalParts = parts;
+    try {
+      const listRes = await this.s3Client.send(
+        new ListPartsCommand({
+          Bucket: config.R2_BUCKET_NAME,
+          Key: key,
+          UploadId: uploadId,
+        })
+      );
+      if (listRes.Parts && listRes.Parts.length > 0) {
+        finalParts = listRes.Parts.map((p) => ({
+          PartNumber: p.PartNumber!,
+          ETag: p.ETag!,
+        }));
+        console.log(`[MovieService] Verified ${finalParts.length} parts directly from R2 storage.`);
+      }
+    } catch (listErr: any) {
+      console.warn('[MovieService] ListParts notice, using client provided parts:', listErr.message);
+    }
+
     // Sort parts sequentially by part number (strict S3/R2 requirement)
-    const sortedParts = parts
+    const sortedParts = finalParts
       .map((p) => ({
         PartNumber: Number(p.PartNumber),
         ETag: p.ETag.replace(/^['"]|['"]$/g, ''), // clean quotation marks if present

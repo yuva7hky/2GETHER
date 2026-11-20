@@ -32,6 +32,7 @@ class UploadService {
         return await new Promise<string>((resolve, reject) => {
           const xhr = new XMLHttpRequest();
           this.activeXHRs.add(xhr);
+          xhr.timeout = 120000; // 120s timeout per chunk for reliable large file uploads
           xhr.open('PUT', partUrl, true);
 
           xhr.upload.onprogress = (evt) => {
@@ -186,8 +187,8 @@ class UploadService {
     });
 
     try {
-      // 1. Request presigned multipart session with 16 MB chunk size
-      const OPTIMAL_CHUNK_SIZE = 16 * 1024 * 1024;
+      // 1. Request presigned multipart session with 8 MB optimal chunk size for fast mobile parallel throughput
+      const OPTIMAL_CHUNK_SIZE = 8 * 1024 * 1024;
       const initRes = await fetch(apiUrl('/api/movies/upload-request'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -298,6 +299,9 @@ class UploadService {
       if (this.cancelUploadFlag) {
         throw new Error('UPLOAD_CANCELLED');
       }
+
+      // Sort all completed parts in strict ascending order by PartNumber
+      completedParts.sort((a, b) => a.PartNumber - b.PartNumber);
 
       useAppStore.getState().setUploadState({
         progress: 99,
