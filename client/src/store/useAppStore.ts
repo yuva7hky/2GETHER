@@ -128,11 +128,12 @@ const DEFAULT_PROFILE: UserProfile = {
     ? localStorage.getItem('2gether_char_name')!
     : 'Sweetheart',
   appearance: {
-    colorScheme: 'sunset_pink',
-    clothingColor: '#ec4899', // Hot pink / blush
-    hairColor: '#3b0764',     // Dark plum
-    skinColor: '#fbcfe8',     // Soft rosy pink
-    accessory: 'ribbon',
+    gender: 'boy',
+    colorScheme: 'warm_cream',
+    clothingColor: '#faf6ee', // Cream-white teddy hoodie
+    hairColor: '#5c3317',     // Warm chestnut brown
+    skinColor: '#ffe2c6',     // Anime fair skin
+    accessory: 'none',
     eyeStyle: 'sparkle',
   },
 };

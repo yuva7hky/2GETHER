@@ -12,6 +12,7 @@ export type RoomState = 'WAITING' | 'READY' | 'IN_THEATRE' | 'WATCHING' | 'CLOSE
 export type CharacterAnimationState = 'IDLE' | 'WALK' | 'RUN' | 'SIT';
 
 export interface CharacterAppearance {
+  gender?: 'boy' | 'girl';
   colorScheme: string;
   clothingColor: string;
   hairColor: string;

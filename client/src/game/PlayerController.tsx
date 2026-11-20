@@ -53,7 +53,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
   const quest = useAppStore((state) => state.quest);
 
   // Authoritative initial spawn coordinates from server localPlayer
-  const spawnTransform = localPlayer?.transform || { x: -1.5, y: 0, z: 22.0, rotY: Math.PI };
+  const spawnTransform = localPlayer?.transform || { x: -1.5, y: 0, z: 38.0, rotY: Math.PI };
   const pos = useRef(new THREE.Vector3(spawnTransform.x, spawnTransform.y, spawnTransform.z));
   const rotY = useRef<number>(spawnTransform.rotY);
 
@@ -460,7 +460,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
         // DOORS LOCKED: street vs cinema isolation
         if (inStreet) {
           pos.current.x = THREE.MathUtils.clamp(pos.current.x, -6.8, 6.8);
-          pos.current.z = THREE.MathUtils.clamp(pos.current.z, 11.35, 29.5); // Blocked in front of doors
+          pos.current.z = THREE.MathUtils.clamp(pos.current.z, 11.35, 64.0); // Blocked in front of doors, allows full exploration
         } else {
           pos.current.x = THREE.MathUtils.clamp(pos.current.x, -7.8, 7.8);
           pos.current.z = THREE.MathUtils.clamp(pos.current.z, -7.5, 10.7); // Inside cinema
@@ -471,7 +471,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
           pos.current.x = THREE.MathUtils.clamp(pos.current.x, -1.35, 1.35);
         } else if (pos.current.z > 11.4) {
           pos.current.x = THREE.MathUtils.clamp(pos.current.x, -6.8, 6.8);
-          pos.current.z = THREE.MathUtils.clamp(pos.current.z, 10.6, 29.5);
+          pos.current.z = THREE.MathUtils.clamp(pos.current.z, 10.6, 64.0);
         } else {
           pos.current.x = THREE.MathUtils.clamp(pos.current.x, -7.8, 7.8);
           pos.current.z = THREE.MathUtils.clamp(pos.current.z, -7.5, 11.4);

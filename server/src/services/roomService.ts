@@ -4,8 +4,8 @@ import { supabaseService, DbRoom } from './supabaseService.js';
 import { movieService } from './movieService.js';
 
 export const SPAWN_POSITIONS: { HOST: PlayerTransform; GUEST: PlayerTransform } = {
-  HOST: { x: -1.5, y: 0, z: 22.0, rotY: Math.PI }, // Outside on street, facing theatre entrance at Z = 11.0
-  GUEST: { x: 1.5, y: 0, z: 22.0, rotY: Math.PI }, // Outside on street, facing theatre entrance (3m separation)
+  HOST: { x: -1.5, y: 0, z: 38.0, rotY: Math.PI }, // Outside on extended street, facing illuminated theatre
+  GUEST: { x: 1.5, y: 0, z: 38.0, rotY: Math.PI }, // Outside on extended street, facing illuminated theatre
 };
 
 class RoomService {
@@ -88,7 +88,7 @@ class RoomService {
         timestamp: now,
       },
       quest: {
-        keyLamppostIndex: crypto.randomInt(0, 6),
+        keyLamppostIndex: crypto.randomInt(3, 14),
         keyPickedBy: null,
         keyPickedByName: null,
         isPressurePlateActive: false,
@@ -150,7 +150,7 @@ class RoomService {
         timestamp: now,
       },
       quest: {
-        keyLamppostIndex: crypto.randomInt(0, 6),
+        keyLamppostIndex: crypto.randomInt(3, 14),
         keyPickedBy: null,
         keyPickedByName: null,
         isPressurePlateActive: false,

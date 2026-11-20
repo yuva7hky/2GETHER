@@ -143,20 +143,85 @@ export const VirtualTheatre: React.FC = () => {
     <div className="relative w-screen h-screen overflow-hidden bg-theatre-darkest select-none touch-none">
       {/* 1. TOP FLOATING HUD */}
       <header className="absolute top-4 inset-x-4 z-40 flex items-center justify-between pointer-events-none">
-        {/* Left: Brand & Room Status Pill */}
-        <div className="flex items-center gap-3 pointer-events-auto">
-          <div className="glass-panel-pink px-4 py-2 rounded-2xl flex items-center gap-3 shadow-glass border border-theatre-pink/30">
-            <div className="w-7 h-7 rounded-xl bg-theatre-pink flex items-center justify-center text-white">
-              <Film className="w-4 h-4" />
+        {/* Left: Couple Avatars + Brand & Room Status */}
+        <div className="flex items-center gap-2.5 pointer-events-auto">
+          {/* Couple Avatar Circles (Image 1 & 2) */}
+          <div className="glass-panel px-2.5 py-1.5 rounded-full flex items-center gap-1.5 shadow-glass border border-white/15 bg-slate-900/60 backdrop-blur-md">
+            {/* Boy Avatar Circle */}
+            <div
+              className="w-8 h-8 rounded-full overflow-hidden border-2 border-sky-400 bg-sky-950/80 flex items-center justify-center shadow-[0_0_8px_rgba(56,189,248,0.4)]"
+              title="Boy (Sweetheart)"
+            >
+              <svg viewBox="0 0 36 36" className="w-full h-full">
+                <circle cx="18" cy="18" r="18" fill="#38bdf8" fillOpacity="0.2" />
+                {/* Skin Face */}
+                <circle cx="18" cy="19" r="10" fill="#ffe2c6" />
+                {/* Hair */}
+                <path d="M7 17 C7 8, 29 8, 29 17 C29 17, 27 11, 23 11 C20 11, 19 13, 17 11 C13 11, 10 14, 7 17 Z" fill="#5c3317" />
+                <path d="M12 12 Q14 16 16 13 Q19 17 22 13 Q24 16 26 12" stroke="#5c3317" strokeWidth="2" strokeLinecap="round" fill="none" />
+                {/* Anime Eyes */}
+                <ellipse cx="14.5" cy="19.5" rx="1.6" ry="2.2" fill="#261208" />
+                <circle cx="15.2" cy="18.8" r="0.7" fill="#ffffff" />
+                <ellipse cx="21.5" cy="19.5" rx="1.6" ry="2.2" fill="#261208" />
+                <circle cx="22.2" cy="18.8" r="0.7" fill="#ffffff" />
+                {/* Blush */}
+                <circle cx="12" cy="22" r="1.5" fill="#fca5a5" fillOpacity="0.8" />
+                <circle cx="24" cy="22" r="1.5" fill="#fca5a5" fillOpacity="0.8" />
+                {/* Smile */}
+                <path d="M16 23.5 Q18 25.5 20 23.5" stroke="#9f1239" strokeWidth="1" strokeLinecap="round" fill="none" />
+                {/* Cream Hoodie Collar */}
+                <path d="M11 29 Q18 26 25 29 L26 36 L10 36 Z" fill="#faf6ee" />
+              </svg>
+            </div>
+
+            {/* Connecting + / Heart Badge */}
+            <span className="text-pink-400 font-bold text-xs select-none px-0.5">♥</span>
+
+            {/* Girl Avatar Circle */}
+            <div
+              className="w-8 h-8 rounded-full overflow-hidden border-2 border-pink-400 bg-pink-950/80 flex items-center justify-center shadow-[0_0_8px_rgba(244,114,182,0.4)]"
+              title="Girl (Darling)"
+            >
+              <svg viewBox="0 0 36 36" className="w-full h-full">
+                <circle cx="18" cy="18" r="18" fill="#f472b6" fillOpacity="0.2" />
+                {/* Back Hair */}
+                <path d="M8 18 C8 28, 28 28, 28 18 Z" fill="#4a2818" />
+                {/* Pink Bow on top */}
+                <path d="M14 9 L18 11 L22 9 L20 7 L18 8 L16 7 Z" fill="#f472b6" />
+                <circle cx="18" cy="9" r="1.4" fill="#fb7185" />
+                {/* Skin Face */}
+                <circle cx="18" cy="19" r="10" fill="#fff1e6" />
+                {/* Front Hair Bangs */}
+                <path d="M8 17 C8 9, 28 9, 28 17 C27 12, 23 12, 20 13 C17 12, 12 12, 8 17 Z" fill="#4a2818" />
+                {/* Anime Eyes */}
+                <ellipse cx="14.5" cy="19.5" rx="1.6" ry="2.2" fill="#261208" />
+                <circle cx="15.2" cy="18.8" r="0.7" fill="#ffffff" />
+                <ellipse cx="21.5" cy="19.5" rx="1.6" ry="2.2" fill="#261208" />
+                <circle cx="22.2" cy="18.8" r="0.7" fill="#ffffff" />
+                {/* Blush */}
+                <circle cx="12" cy="22" r="1.5" fill="#fda4af" fillOpacity="0.8" />
+                <circle cx="24" cy="22" r="1.5" fill="#fda4af" fillOpacity="0.8" />
+                {/* Smile */}
+                <path d="M16 23.5 Q18 25.5 20 23.5" stroke="#9f1239" strokeWidth="1" strokeLinecap="round" fill="none" />
+                {/* Pink Sweater Collar + White Bow */}
+                <path d="M11 29 Q18 26 25 29 L26 36 L10 36 Z" fill="#f9a8d4" />
+                <circle cx="18" cy="28.5" r="1" fill="#ffffff" />
+              </svg>
+            </div>
+          </div>
+
+          <div className="glass-panel-pink px-3.5 py-1.5 rounded-2xl flex items-center gap-2.5 shadow-glass border border-theatre-pink/30">
+            <div className="w-6 h-6 rounded-lg bg-theatre-pink flex items-center justify-center text-white">
+              <Film className="w-3.5 h-3.5" />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-sm text-white">2GETHER</span>
-                <span className="text-[10px] uppercase font-bold px-1.5 py-0.5 rounded bg-theatre-surface text-theatre-gold">
+              <div className="flex items-center gap-1.5">
+                <span className="font-bold text-xs text-white">2GETHER</span>
+                <span className="text-[9px] uppercase font-bold px-1 py-0.5 rounded bg-theatre-surface text-theatre-gold">
                   Cinema
                 </span>
               </div>
-              <div className="text-[11px] text-slate-300 flex items-center gap-1.5 mt-0.5">
+              <div className="text-[10px] text-slate-300 flex items-center gap-1">
                 <span>Room:</span>
                 <button
                   onClick={handleCopyCode}
@@ -171,9 +236,9 @@ export const VirtualTheatre: React.FC = () => {
           </div>
 
           {/* Player Presence Indicator (Strictly 2) */}
-          <div className="glass-panel px-3 py-2 rounded-2xl hidden sm:flex items-center gap-2 text-xs border border-white/10">
-            <Users className="w-4 h-4 text-theatre-blush" />
-            <span className="font-semibold text-slate-200">
+          <div className="glass-panel px-3 py-1.5 rounded-2xl hidden sm:flex items-center gap-2 text-xs border border-white/10">
+            <Users className="w-3.5 h-3.5 text-theatre-blush" />
+            <span className="font-semibold text-slate-200 text-xs">
               {otherPlayer ? '2 / 2 Hearts' : '1 / 2 Waiting...'}
             </span>
             <span

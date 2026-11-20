@@ -14,11 +14,27 @@ export const CharacterCreation: React.FC = () => {
   const updateAppearance = useAppStore((state) => state.updateAppearance);
 
   const [name, setName] = useState(profile.characterName);
+  const [gender, setGender] = useState<'boy' | 'girl'>(profile.appearance.gender || 'boy');
   const [clothingColor, setClothingColor] = useState(profile.appearance.clothingColor);
   const [hairColor, setHairColor] = useState(profile.appearance.hairColor);
   const [skinColor, setSkinColor] = useState(profile.appearance.skinColor);
   const [accessory, setAccessory] = useState<CharacterAppearance['accessory']>(profile.appearance.accessory);
   const [savedToast, setSavedToast] = useState(false);
+
+  const selectPreset = (selectedGender: 'boy' | 'girl') => {
+    setGender(selectedGender);
+    if (selectedGender === 'boy') {
+      setClothingColor('#faf6ee');
+      setHairColor('#5c3317');
+      setSkinColor('#ffe2c6');
+      setAccessory('none');
+    } else {
+      setClothingColor('#f9a8d4');
+      setHairColor('#4a2818');
+      setSkinColor('#fff1e6');
+      setAccessory('ribbon');
+    }
+  };
 
   // Cute color palettes
   const CLOTHING_PALETTE = [
@@ -59,6 +75,7 @@ export const CharacterCreation: React.FC = () => {
       characterName: trimmed,
     });
     updateAppearance({
+      gender,
       clothingColor,
       hairColor,
       skinColor,
@@ -73,6 +90,7 @@ export const CharacterCreation: React.FC = () => {
         id: profile.userId,
         display_name: trimmed,
         avatar_config: {
+          gender,
           colorScheme: 'custom',
           clothingColor,
           hairColor,
@@ -91,6 +109,7 @@ export const CharacterCreation: React.FC = () => {
   };
 
   const previewAppearance: CharacterAppearance = {
+    gender,
     colorScheme: 'custom',
     clothingColor,
     hairColor,
@@ -176,6 +195,38 @@ export const CharacterCreation: React.FC = () => {
 
         {/* Customization Options (5 cols on large screens) */}
         <div className="lg:col-span-5 glass-panel rounded-3xl p-6 sm:p-8 space-y-6 border border-white/10 shadow-2xl">
+          {/* Preset Selector: Boy or Girl */}
+          <div className="space-y-2">
+            <label className="text-xs font-semibold text-theatre-gold uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5" />
+              Choose Character Model
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => selectPreset('boy')}
+                className={`py-3 px-4 rounded-2xl flex items-center justify-center gap-2 border font-bold text-xs transition ${
+                  gender === 'boy'
+                    ? 'bg-sky-500/20 border-sky-400 text-sky-200 shadow-[0_0_12px_rgba(56,189,248,0.3)]'
+                    : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                }`}
+              >
+                <span>👦 Boy (Teddy Hoodie)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => selectPreset('girl')}
+                className={`py-3 px-4 rounded-2xl flex items-center justify-center gap-2 border font-bold text-xs transition ${
+                  gender === 'girl'
+                    ? 'bg-pink-500/20 border-pink-400 text-pink-200 shadow-[0_0_12px_rgba(244,114,182,0.3)]'
+                    : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
+                }`}
+              >
+                <span>👧 Girl (Pink Ribbon)</span>
+              </button>
+            </div>
+          </div>
+
           {/* Character Name Input */}
           <div className="space-y-2">
             <label className="text-xs font-semibold text-theatre-gold uppercase tracking-wider flex items-center gap-1.5">

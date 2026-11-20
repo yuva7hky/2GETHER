@@ -21,12 +21,12 @@ export const CoupleSeats: React.FC<CoupleSeatsProps> = ({
   suggestedSeatIndex = null,
 }) => {
   const velvetMat = new THREE.MeshStandardMaterial({
-    color: '#701a75', // Deep luxurious magenta velvet
-    roughness: 0.6,
+    color: '#be123c', // Rich crimson velvet matching reference Image 2
+    roughness: 0.55,
   });
 
   const seatCushionMat = new THREE.MeshStandardMaterial({
-    color: '#831843', // Warm ruby velvet
+    color: '#9f1239', // Deep plush ruby velvet
     roughness: 0.5,
   });
 
