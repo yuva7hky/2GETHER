@@ -195,11 +195,13 @@ export const movieController = {
       }
 
       // Complete in R2
-      const { key, playbackUrl } = await movieService.completeMultipartUpload(
+      const { key, playbackUrl: directR2Url } = await movieService.completeMultipartUpload(
         data.key,
         data.uploadId,
         data.parts
       );
+
+      const streamUrl = `/api/movies/${normalizedCode}/stream`;
 
       const movieMetadata = {
         id: `movie_${Date.now()}`,
@@ -209,7 +211,8 @@ export const movieController = {
         fileSize: data.fileSize,
         durationSeconds: 0,
         status: 'READY' as const,
-        playbackUrl,
+        playbackUrl: streamUrl,
+        directR2Url,
       };
 
       // Persist metadata to Supabase
@@ -315,7 +318,7 @@ export const movieController = {
         if (dbRoom) {
           const meta = await supabaseService.getMovieMetadata(dbRoom.id);
           if (meta) {
-            const freshUrl = await movieService.getPlaybackUrl(meta.r2_object_key);
+            const streamUrl = `/api/movies/${normalizedCode}/stream`;
             const restoredMovie = {
               id: meta.id,
               roomCode: normalizedCode,
@@ -324,13 +327,13 @@ export const movieController = {
               fileSize: meta.file_size,
               durationSeconds: 0,
               status: 'READY' as const,
-              playbackUrl: freshUrl,
+              playbackUrl: streamUrl,
             };
             roomService.setRoomMovie(normalizedCode, restoredMovie);
             res.json({
               success: true,
               hasMovie: true,
-              playbackUrl: freshUrl,
+              playbackUrl: streamUrl,
               movie: restoredMovie,
             });
             return;
@@ -345,15 +348,15 @@ export const movieController = {
         return;
       }
 
-      // Generate a fresh presigned playback URL
-      const freshUrl = await movieService.getPlaybackUrl(room.movie.r2Key);
+      // Return stream URL for cinema playback
+      const streamUrl = `/api/movies/${normalizedCode}/stream`;
       res.json({
         success: true,
         hasMovie: true,
-        playbackUrl: freshUrl,
+        playbackUrl: streamUrl,
         movie: {
           ...room.movie,
-          playbackUrl: freshUrl,
+          playbackUrl: streamUrl,
         },
       });
     } catch (err) {
@@ -474,6 +477,40 @@ export const movieController = {
         buffer
       );
       res.json({ success: true, partNumber: pNum, etag });
+    } catch (err) {
+      next(err);
+    }
+  },
+
+  /**
+   * HTTP Range video streaming route with full CORS support
+   */
+  async streamMovie(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
+      const normalizedCode = (code || '').trim().toUpperCase();
+
+      let room = roomService.getRoom(normalizedCode);
+      let r2Key = room?.movie?.r2Key;
+
+      if (!r2Key) {
+        // Fallback check in Supabase
+        const dbRoom = await supabaseService.getRoomByCode(normalizedCode);
+        if (dbRoom) {
+          const meta = await supabaseService.getMovieMetadata(dbRoom.id);
+          if (meta) {
+            r2Key = meta.r2_object_key;
+          }
+        }
+      }
+
+      if (!r2Key) {
+        res.status(404).json({ success: false, error: 'No movie found for this room' });
+        return;
+      }
+
+      const rangeHeader = req.headers.range;
+      await movieService.streamVideo(r2Key, rangeHeader, res);
     } catch (err) {
       next(err);
     }

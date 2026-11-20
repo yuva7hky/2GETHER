@@ -10,9 +10,11 @@ import {
   ListObjectsV2Command,
   DeleteObjectsCommand,
   PutBucketCorsCommand,
+  HeadObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import path from 'path';
+import type { Response } from 'express';
 import { config } from '../config/index.js';
 
 export const MAX_FILE_SIZE_BYTES = 700 * 1024 * 1024; // 700 MB maximum limit
@@ -408,6 +410,83 @@ export class MovieService {
       }
     } catch (err: any) {
       console.warn(`[MovieService] Warning purging storage for room ${normalizedCode}:`, err.message);
+    }
+  }
+
+  /**
+   * HTTP Range video streaming directly from Cloudflare R2 through backend with full CORS support
+   */
+  public async streamVideo(key: string, rangeHeader: string | undefined, res: Response): Promise<void> {
+    if (!this.s3Client || !config.R2_BUCKET_NAME) {
+      res.status(500).send('Storage not configured');
+      return;
+    }
+
+    try {
+      // 1. Get object metadata (content length, content type)
+      const head = await this.s3Client.send(
+        new HeadObjectCommand({
+          Bucket: config.R2_BUCKET_NAME,
+          Key: key,
+        })
+      );
+
+      const fileSize = head.ContentLength || 0;
+      const contentType = head.ContentType || 'video/mp4';
+
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+      res.setHeader('Accept-Ranges', 'bytes');
+
+      if (!rangeHeader) {
+        res.writeHead(200, {
+          'Content-Length': fileSize,
+          'Content-Type': contentType,
+        });
+        const getCmd = new GetObjectCommand({
+          Bucket: config.R2_BUCKET_NAME,
+          Key: key,
+        });
+        const s3Res = await this.s3Client.send(getCmd);
+        if (s3Res.Body) {
+          (s3Res.Body as any).pipe(res);
+        }
+        return;
+      }
+
+      // 2. Parse Range header (e.g., "bytes=0-1048575")
+      const parts = rangeHeader.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+      if (start >= fileSize || end >= fileSize) {
+        res.status(416).setHeader('Content-Range', `bytes */${fileSize}`).send();
+        return;
+      }
+
+      const chunkSize = end - start + 1;
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Content-Length': chunkSize,
+        'Content-Type': contentType,
+      });
+
+      const getCmd = new GetObjectCommand({
+        Bucket: config.R2_BUCKET_NAME,
+        Key: key,
+        Range: `bytes=${start}-${end}`,
+      });
+
+      const s3Res = await this.s3Client.send(getCmd);
+      if (s3Res.Body) {
+        (s3Res.Body as any).pipe(res);
+      }
+    } catch (err: any) {
+      console.error('[MovieService] Stream error:', err.message);
+      if (!res.headersSent) {
+        res.status(500).send('Streaming error');
+      }
     }
   }
 }

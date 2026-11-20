@@ -52,6 +52,15 @@ export const MoviePlayerOverlay: React.FC<MoviePlayerOverlayProps> = ({ isOpen, 
   const handlePlayToggle = () => {
     if (!currentMovie) return;
     const nextAction = isPlaying ? 'PAUSE' : 'PLAY';
+    const vid = useAppStore.getState().activeVideoElement;
+    if (vid) {
+      if (nextAction === 'PLAY') {
+        vid.muted = false;
+        vid.play().catch(() => {});
+      } else {
+        vid.pause();
+      }
+    }
     setMovieSync({ action: nextAction });
     socketService.sendMovieSync(nextAction, movieTime, currentMovie.playbackUrl);
   };

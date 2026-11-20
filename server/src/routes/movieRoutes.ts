@@ -25,6 +25,9 @@ router.get('/:code', movieController.getMovie);
 // Get short-lived presigned playback URL (members only)
 router.get('/:code/playback-url', movieController.getPlaybackUrl);
 
+// Video streaming route with HTTP range support
+router.get('/:code/stream', movieController.streamMovie);
+
 // Delete movie from R2 and database (creator only)
 router.delete('/:code', movieController.deleteMovie);
 

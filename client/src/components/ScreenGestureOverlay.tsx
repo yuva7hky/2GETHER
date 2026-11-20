@@ -159,6 +159,15 @@ export const ScreenGestureOverlay: React.FC = () => {
 
   const togglePlay = () => {
     const nextAction = isPlaying ? 'PAUSE' : 'PLAY';
+    const vid = useAppStore.getState().activeVideoElement;
+    if (vid) {
+      if (nextAction === 'PLAY') {
+        vid.muted = false;
+        vid.play().catch(() => {});
+      } else {
+        vid.pause();
+      }
+    }
     setMovieSync({ action: nextAction });
     socketService.sendMovieSync(nextAction, movieTime, currentMovie.playbackUrl);
     triggerFeedback(nextAction);

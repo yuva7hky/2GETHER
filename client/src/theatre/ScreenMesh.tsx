@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { useAppStore } from '../store/useAppStore';
+import { apiUrl } from '../services/apiConfig';
 
 export const ScreenMesh: React.FC = () => {
   const currentMovie = useAppStore((state) => state.currentMovie);
@@ -11,6 +12,7 @@ export const ScreenMesh: React.FC = () => {
 
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
   const [videoTexture, setVideoTexture] = useState<THREE.VideoTexture | null>(null);
+  const [isVideoReady, setIsVideoReady] = useState(false);
   const screenRef = useRef<THREE.Mesh>(null);
   const projectorLightRef = useRef<THREE.SpotLight>(null);
 
@@ -22,16 +24,22 @@ export const ScreenMesh: React.FC = () => {
         videoElement.src = '';
         setVideoElement(null);
         setVideoTexture(null);
+        setIsVideoReady(false);
       }
       return;
     }
 
+    const rawUrl = currentMovie.playbackUrl;
+    const resolvedUrl = rawUrl.startsWith('http') ? rawUrl : apiUrl(rawUrl);
+
+    console.log('[ScreenMesh] Initializing movie playback stream:', resolvedUrl);
+
     const vid = document.createElement('video');
-    vid.src = currentMovie.playbackUrl;
+    vid.src = resolvedUrl;
     vid.crossOrigin = 'anonymous';
     vid.loop = false;
-    vid.muted = false;
     vid.playsInline = true;
+    vid.preload = 'auto';
 
     const texture = new THREE.VideoTexture(vid);
     texture.minFilter = THREE.LinearFilter;
@@ -45,6 +53,16 @@ export const ScreenMesh: React.FC = () => {
     setVideoTexture(texture);
     useAppStore.getState().setActiveVideoElement(vid);
 
+    vid.oncanplay = () => {
+      setIsVideoReady(true);
+      texture.needsUpdate = true;
+    };
+
+    vid.onloadeddata = () => {
+      setIsVideoReady(true);
+      texture.needsUpdate = true;
+    };
+
     vid.onloadedmetadata = () => {
       if (vid.duration && !isNaN(vid.duration)) {
         useAppStore.getState().setMovieDuration(vid.duration);
@@ -55,7 +73,23 @@ export const ScreenMesh: React.FC = () => {
       useAppStore.getState().setMovieTime(vid.currentTime);
     };
 
+    vid.onerror = (e) => {
+      console.error('[ScreenMesh] Video element error:', vid.error);
+    };
+
+    // Global interaction listener to auto-unmute on first user touch / click
+    const handleUserInteraction = () => {
+      if (vid.muted) {
+        vid.muted = false;
+      }
+      if (useAppStore.getState().isPlaying && vid.paused) {
+        vid.play().catch(() => {});
+      }
+    };
+    window.addEventListener('pointerdown', handleUserInteraction);
+
     return () => {
+      window.removeEventListener('pointerdown', handleUserInteraction);
       vid.pause();
       vid.src = '';
       texture.dispose();
@@ -63,19 +97,27 @@ export const ScreenMesh: React.FC = () => {
     };
   }, [currentMovie?.playbackUrl]);
 
-  // Synchronize play / pause / seek from store
+  // Synchronize play / pause from store with intelligent autoplay unlock
   useEffect(() => {
     if (!videoElement) return;
 
     if (isPlaying) {
-      videoElement.play().catch((err) => {
-        console.warn('[ScreenMesh] Auto-play was blocked or waiting for user interaction:', err);
-      });
+      const playPromise = videoElement.play();
+      if (playPromise !== undefined) {
+        playPromise.catch((err) => {
+          console.warn('[ScreenMesh] Unmuted autoplay blocked by browser policy. Playing muted first...', err?.message);
+          videoElement.muted = true;
+          videoElement.play().catch((mutedErr) => {
+            console.error('[ScreenMesh] Muted autoplay also failed:', mutedErr);
+          });
+        });
+      }
     } else {
       videoElement.pause();
     }
   }, [isPlaying, videoElement]);
 
+  // Synchronize seek position from store
   useEffect(() => {
     if (!videoElement || syncState.currentTime === undefined) return;
     const diff = Math.abs(videoElement.currentTime - syncState.currentTime);
@@ -84,8 +126,12 @@ export const ScreenMesh: React.FC = () => {
     }
   }, [syncState.currentTime, videoElement]);
 
-  // Subtle projector shimmer effect
+  // Update video texture each frame and projector shimmer
   useFrame((state) => {
+    if (videoTexture && videoElement && videoElement.readyState >= 2) {
+      videoTexture.needsUpdate = true;
+    }
+
     if (projectorLightRef.current) {
       const flicker = Math.sin(state.clock.getElapsedTime() * 10) * 0.05 + 0.95;
       projectorLightRef.current.intensity = isPlaying ? 2.5 * flicker : 1.2;
@@ -109,7 +155,7 @@ export const ScreenMesh: React.FC = () => {
       {/* Main Cinema Screen Canvas */}
       <mesh ref={screenRef} position={[0, 0, 0.05]}>
         <planeGeometry args={[13.6, 7.6]} />
-        {videoTexture ? (
+        {videoTexture && isVideoReady ? (
           <meshBasicMaterial map={videoTexture} toneMapped={false} />
         ) : (
           <meshStandardMaterial
@@ -122,8 +168,8 @@ export const ScreenMesh: React.FC = () => {
         )}
       </mesh>
 
-      {/* Standby UI displayed on screen when no movie is playing */}
-      {!videoTexture && (
+      {/* Standby UI displayed on screen when no movie or video is loading */}
+      {(!videoTexture || !isVideoReady) && (
         <group position={[0, 0, 0.1]}>
           <Text
             position={[0, 1.2, 0]}
@@ -163,8 +209,10 @@ export const ScreenMesh: React.FC = () => {
             anchorX="center"
             anchorY="middle"
           >
-            {useAppStore.getState().isHost 
-              ? 'Click "Select Movie" to begin streaming'
+            {currentMovie
+              ? 'Loading movie stream...'
+              : useAppStore.getState().isHost
+              ? 'Click "Projector / Upload" to select movie'
               : 'Waiting for room host to select movie...'}
           </Text>
         </group>
@@ -177,19 +225,6 @@ export const ScreenMesh: React.FC = () => {
         intensity={isPlaying ? 1.8 : 0.6}
         distance={18}
       />
-
-      {/* Overhead Projector Spotlight pointing at screen from behind audience (no shadow casting to prevent acne) */}
-      <spotLight
-        ref={projectorLightRef}
-        position={[0, 4.5, 12]}
-        target={screenRef.current || undefined}
-        color="#fef08a"
-        intensity={1.2}
-        angle={Math.PI / 6}
-        penumbra={0.8}
-        castShadow={false}
-      />
     </group>
   );
 };
-
