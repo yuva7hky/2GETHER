@@ -373,13 +373,15 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
             <meshBasicMaterial color="#fef08a" />
           </mesh>
 
-          {/* Warm Street Light Pool */}
-          <pointLight
-            position={[0, 3.8, 0]}
-            color="#fde047"
-            intensity={1.2}
-            distance={8.5}
-          />
+          {/* Warm Street Light Pool (optimized to 2-3 key illumination zones for smooth 60fps on mobile) */}
+          {(idx === 1 || idx === 6 || idx === quest.keyLamppostIndex) && (
+            <pointLight
+              position={[0, 3.8, 0]}
+              color="#fde047"
+              intensity={1.2}
+              distance={9.0}
+            />
+          )}
         </group>
       ))}
 

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { movieController } from '../controllers/movieController.js';
 import { uploadLimiter } from '../middleware/rateLimiter.js';
 
@@ -9,6 +9,9 @@ router.get('/', movieController.info);
 
 // Presigned direct browser upload session
 router.post('/upload-request', uploadLimiter, movieController.initUpload);
+
+// Fallback upload-part proxy when direct Cloudflare R2 browser upload hits CORS
+router.post('/upload-part-proxy', express.raw({ type: '*/*', limit: '32mb' }), movieController.uploadPartProxy);
 
 // Finalize multipart upload
 router.post('/complete-upload', movieController.completeUpload);

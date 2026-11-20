@@ -9,6 +9,7 @@ import {
   ListMultipartUploadsCommand,
   ListObjectsV2Command,
   DeleteObjectsCommand,
+  PutBucketCorsCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import path from 'path';
@@ -48,6 +49,9 @@ export class MovieService {
         // Initial sweep for abandoned ongoing multipart sessions & schedule recurring sweep
         setTimeout(() => this.cleanupStaleMultipartUploads(), 2000);
         setInterval(() => this.cleanupStaleMultipartUploads(), 10 * 60 * 1000); // Every 10 minutes
+
+        // Configure R2 bucket CORS for seamless direct browser uploads
+        setTimeout(() => this.configureR2Cors(), 1500);
       } catch (err: any) {
         console.warn('[MovieService] Failed to initialize live S3 client, using dev fallback:', err.message);
         this.s3Client = null;
@@ -55,6 +59,60 @@ export class MovieService {
     } else {
       console.log('[MovieService] No live R2 credentials configured. Running in local simulation mode.');
     }
+  }
+
+  /**
+   * Sets CORS rules on Cloudflare R2 bucket so web browsers (e.g. Vercel) can upload directly
+   */
+  public async configureR2Cors(): Promise<void> {
+    if (!this.s3Client || !config.R2_BUCKET_NAME) return;
+    try {
+      console.log(`[MovieService] Configuring CORS for R2 bucket: ${config.R2_BUCKET_NAME}...`);
+      await this.s3Client.send(
+        new PutBucketCorsCommand({
+          Bucket: config.R2_BUCKET_NAME,
+          CORSConfiguration: {
+            CORSRules: [
+              {
+                AllowedOrigins: ['*'],
+                AllowedMethods: ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'],
+                AllowedHeaders: ['*'],
+                ExposeHeaders: ['ETag', 'etag', 'Content-Length'],
+                MaxAgeSeconds: 3600,
+              },
+            ],
+          },
+        })
+      );
+      console.log('[MovieService] Cloudflare R2 CORS configured successfully (AllowedOrigins: *).');
+    } catch (err: any) {
+      console.warn('[MovieService] Could not auto-apply R2 CORS via API (credentials may lack PutBucketCors permission):', err.message);
+    }
+  }
+
+  /**
+   * Direct server-side upload of a multipart chunk (failsafe fallback when browser direct R2 upload has CORS issues)
+   */
+  public async uploadPartDirect(
+    key: string,
+    uploadId: string,
+    partNumber: number,
+    body: Buffer
+  ): Promise<string> {
+    if (!this.s3Client || !config.R2_BUCKET_NAME) {
+      throw new Error('Cloudflare R2 storage is not connected');
+    }
+    const res = await this.s3Client.send(
+      new UploadPartCommand({
+        Bucket: config.R2_BUCKET_NAME,
+        Key: key,
+        UploadId: uploadId,
+        PartNumber: partNumber,
+        Body: body,
+      })
+    );
+    const etag = (res.ETag || '').replace(/^['"]|['"]$/g, '');
+    return etag || `etag_part_${partNumber}`;
   }
 
   public isConnected(): boolean {

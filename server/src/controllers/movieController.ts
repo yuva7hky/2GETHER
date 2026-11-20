@@ -452,4 +452,30 @@ export const movieController = {
       next(err);
     }
   },
+
+  /**
+   * Proxy fallback upload endpoint for individual parts when client direct R2 upload hits CORS
+   */
+  async uploadPartProxy(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { key, uploadId, partNumber } = req.query;
+      if (!key || !uploadId || !partNumber) {
+        res.status(400).json({ success: false, error: 'Missing key, uploadId, or partNumber query param' });
+        return;
+      }
+      const pNum = parseInt(partNumber as string, 10);
+      const rawBody = req.body;
+      const buffer = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(rawBody);
+
+      const etag = await movieService.uploadPartDirect(
+        key as string,
+        uploadId as string,
+        pNum,
+        buffer
+      );
+      res.json({ success: true, partNumber: pNum, etag });
+    } catch (err) {
+      next(err);
+    }
+  },
 };

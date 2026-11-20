@@ -13,6 +13,8 @@ import {
 
 interface PlayerControllerProps {
   mobileJoystickVector?: { x: number; y: number };
+  mobileJoystickRef?: React.MutableRefObject<{ x: number; y: number }>;
+  mobileRunRef?: React.MutableRefObject<boolean>;
   mobileRunPressed?: boolean;
   mobileJumpPressed?: boolean;
   mobileSitTrigger?: boolean;
@@ -25,6 +27,8 @@ interface PlayerControllerProps {
 
 export const PlayerController: React.FC<PlayerControllerProps> = ({
   mobileJoystickVector = { x: 0, y: 0 },
+  mobileJoystickRef,
+  mobileRunRef,
   mobileRunPressed = false,
   mobileJumpPressed = false,
   mobileSitTrigger = false,
@@ -397,9 +401,10 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
     if (keys.current['KeyD'] || keys.current['ArrowRight']) moveX += 1;
 
     // Combine mobile joystick input (y < 0 is forward)
-    if (Math.abs(mobileJoystickVector.x) > 0.08 || Math.abs(mobileJoystickVector.y) > 0.08) {
-      moveX += mobileJoystickVector.x;
-      moveZ += mobileJoystickVector.y;
+    const joyVec = mobileJoystickRef?.current || mobileJoystickVector;
+    if (Math.abs(joyVec.x) > 0.08 || Math.abs(joyVec.y) > 0.08) {
+      moveX += joyVec.x;
+      moveZ += joyVec.y;
     }
 
     // Convert input relative to camera yaw
@@ -416,7 +421,11 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
 
     const moveMagnitude = Math.hypot(worldMoveX, worldMoveZ);
     const isMoving = moveMagnitude > 0.05;
-    const isRunning = keys.current['ShiftLeft'] || keys.current['ShiftRight'] || mobileRunPressed;
+    const isRunning =
+      keys.current['ShiftLeft'] ||
+      keys.current['ShiftRight'] ||
+      (mobileRunRef?.current ?? false) ||
+      mobileRunPressed;
 
     // Jump Physics
     if ((keys.current['Space'] || mobileJumpPressed) && isGrounded.current) {

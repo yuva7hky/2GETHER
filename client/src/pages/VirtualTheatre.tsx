@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Canvas } from '@react-three/fiber';
 import {
   Film,
@@ -52,9 +52,9 @@ export const VirtualTheatre: React.FC = () => {
   const [pickupKeyTrigger, setPickupKeyTrigger] = useState(false);
   const [unlockDoorTrigger, setUnlockDoorTrigger] = useState(false);
 
-  // Mobile controller vectors & triggers
-  const [mobileVec, setMobileVec] = useState({ x: 0, y: 0 });
-  const [mobileRun, setMobileRun] = useState(false);
+  // Mobile controller vectors & triggers via Ref for 60fps zero-overhead gaming
+  const mobileVecRef = useRef({ x: 0, y: 0 });
+  const mobileRunRef = useRef(false);
   const [mobileJumpTrigger, setMobileJumpTrigger] = useState(false);
   const [mobileSitTrigger, setMobileSitTrigger] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
@@ -303,7 +303,14 @@ export const VirtualTheatre: React.FC = () => {
 
       {/* 3. 3D WEBGL THEATRE CANVAS */}
       <Canvas
-        shadows
+        shadows={!isTouchDevice}
+        dpr={isTouchDevice ? 1 : [1, 1.25]}
+        gl={{
+          antialias: !isTouchDevice,
+          powerPreference: 'high-performance',
+          stencil: false,
+          depth: true,
+        }}
         camera={{ position: [-1.5, 2.4, 26.6], fov: 50 }}
         className="w-full h-full cursor-default touch-none"
       >
@@ -343,8 +350,8 @@ export const VirtualTheatre: React.FC = () => {
 
         {/* Local Controllable Player */}
         <PlayerController
-          mobileJoystickVector={mobileVec}
-          mobileRunPressed={mobileRun}
+          mobileJoystickRef={mobileVecRef}
+          mobileRunRef={mobileRunRef}
           mobileJumpPressed={mobileJumpTrigger}
           mobileSitTrigger={mobileSitTrigger}
           onCanSitChanged={(canSit, idx) => {
@@ -364,8 +371,12 @@ export const VirtualTheatre: React.FC = () => {
       {/* 4. MOBILE ON-SCREEN JOYSTICK & BUTTONS (Touch Devices Only) */}
       {isTouchDevice && (
         <MobileControls
-          onVectorChange={setMobileVec}
-          onRunChange={setMobileRun}
+          onVectorChange={(vec) => {
+            mobileVecRef.current = vec;
+          }}
+          onRunChange={(run) => {
+            mobileRunRef.current = run;
+          }}
           onJumpTrigger={() => {
             setMobileJumpTrigger(true);
             setTimeout(() => setMobileJumpTrigger(false), 150);
