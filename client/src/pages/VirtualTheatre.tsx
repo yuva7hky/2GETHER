@@ -372,10 +372,10 @@ export const VirtualTheatre: React.FC = () => {
         dpr={isTouchDevice ? 1 : [1, 1.25]}
         gl={{
           antialias: !isTouchDevice,
-          powerPreference: 'high-performance',
+          powerPreference: isTouchDevice ? 'default' : 'high-performance',
           stencil: false,
           depth: true,
-          precision: 'highp',
+          precision: isTouchDevice ? 'mediump' : 'highp',
         }}
         camera={{ position: [-1.5, 2.4, 26.6], fov: 50 }}
         className="w-full h-full cursor-default touch-none"

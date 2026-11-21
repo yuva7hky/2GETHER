@@ -41,13 +41,29 @@ class UploadService {
             }
           };
 
-          xhr.onload = () => {
+          xhr.onload = async () => {
             this.activeXHRs.delete(xhr);
             if (xhr.status >= 200 && xhr.status < 300) {
               onPartProgress(blob.size);
               let etag = xhr.getResponseHeader('ETag') || xhr.getResponseHeader('etag') || '';
               etag = etag.replace(/^['"]|['"]$/g, '');
-              resolve(etag || `etag_part_${partNumber}`);
+              if (etag) {
+                resolve(etag);
+                return;
+              }
+              // If browser CORS policy masked ETag header, fallback to backend proxy for authoritative ETag
+              if (key && uploadId) {
+                console.warn(`[UploadService] Part ${partNumber} uploaded but ETag header was masked by browser CORS. Retrieving via proxy...`);
+                try {
+                  const proxyEtag = await this.uploadChunkViaProxy(key, uploadId, partNumber, blob, onPartProgress);
+                  resolve(proxyEtag);
+                  return;
+                } catch (proxyErr: any) {
+                  reject(new Error(`Failed to retrieve valid ETag for part ${partNumber}: ${proxyErr.message}`));
+                  return;
+                }
+              }
+              reject(new Error(`Storage did not expose ETag header for part ${partNumber}. Check Cloudflare R2 CORS exposeHeaders.`));
             } else if (xhr.status === 403) {
               reject(new Error('AUTH_ERROR: Presigned credentials rejected by R2 storage (HTTP 403).'));
             } else {

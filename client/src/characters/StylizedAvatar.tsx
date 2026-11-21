@@ -140,12 +140,12 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
         headRef.current.rotation.y = Math.sin(t * 0.8) * 0.08;
       }
       if (leftLegRef.current) {
-        // Natural relaxed knee bend dangling from bench
-        leftLegRef.current.rotation.x = -Math.PI / 2.2 + (isSwing ? Math.sin(t * 1.5) * 0.12 : 0);
+        // Natural relaxed knee bend dangling from bench (inherits avatar root pitch cleanly)
+        leftLegRef.current.rotation.x = -Math.PI / 2.2;
         leftLegRef.current.position.set(-0.18, 0.45, 0.25);
       }
       if (rightLegRef.current) {
-        rightLegRef.current.rotation.x = -Math.PI / 2.2 + (isSwing ? Math.sin(t * 1.5) * 0.12 : 0);
+        rightLegRef.current.rotation.x = -Math.PI / 2.2;
         rightLegRef.current.position.set(0.18, 0.45, 0.25);
       }
       if (leftArmRef.current) {
@@ -543,8 +543,8 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
               </mesh>
             </group>
 
-            {/* PLEATED PASTEL SKIRT */}
-            <group position={[0, -0.32, 0]}>
+            {/* PLEATED PASTEL SKIRT (Adjusted height when seated on swing to prevent clipping cushion) */}
+            <group position={[0, isSitting && (seatIndex === 10 || seatIndex === 11) ? -0.22 : -0.32, 0]}>
               <mesh material={skirtPlaidMat}>
                 <cylinderGeometry args={[0.29, 0.39, 0.18, 32]} />
               </mesh>

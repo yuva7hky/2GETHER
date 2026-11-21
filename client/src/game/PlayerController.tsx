@@ -14,6 +14,10 @@ import {
   getSwingSeatTransform,
 } from '../theatre/OutdoorStreetScene';
 
+// Module-level scratch vectors to prevent GC allocations on mobile
+const TEMP_TARGET_CAM = new THREE.Vector3();
+const TEMP_LOOK_AT = new THREE.Vector3();
+
 interface PlayerControllerProps {
   mobileJoystickVector?: { x: number; y: number };
   mobileJoystickRef?: React.MutableRefObject<{ x: number; y: number }>;
@@ -442,24 +446,26 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
         rotY.current = swingTransform.rotY;
 
         playerRef.current.position.copy(pos.current);
-        playerRef.current.rotation.set(0, rotY.current, swingTransform.tiltZ);
+        playerRef.current.rotation.order = 'YXZ';
+        playerRef.current.rotation.set(swingTransform.tiltX, swingTransform.rotY, 0);
 
         // Romantic street swing camera view - couple framing
-        const targetCamPos = new THREE.Vector3(1.5, 1.8, 32.0);
-        const lookAtPos = new THREE.Vector3(4.6, 1.4, 32.0);
+        TEMP_TARGET_CAM.set(1.5, 1.8, 32.0);
+        TEMP_LOOK_AT.set(4.6, 1.4, 32.0);
         const sitLerp = Math.min(1.0, safeDelta * 3.5);
-        camera.position.lerp(targetCamPos, sitLerp);
-        camera.lookAt(lookAtPos);
+        camera.position.lerp(TEMP_TARGET_CAM, sitLerp);
+        camera.lookAt(TEMP_LOOK_AT);
       } else {
         playerRef.current.position.copy(pos.current);
+        playerRef.current.rotation.order = 'XYZ';
         playerRef.current.rotation.set(0, rotY.current, 0);
 
         // Cinematic couple camera view when sitting in theatre
-        const targetCamPos = new THREE.Vector3(0, 2.5, pos.current.z + 4.2);
-        const lookAtPos = new THREE.Vector3(0, 4.6, -9.5); // Cinema screen center
+        TEMP_TARGET_CAM.set(0, 2.5, pos.current.z + 4.2);
+        TEMP_LOOK_AT.set(0, 4.6, -9.5); // Cinema screen center
         const sitLerp = Math.min(1.0, safeDelta * 3.5);
-        camera.position.lerp(targetCamPos, sitLerp);
-        camera.lookAt(lookAtPos);
+        camera.position.lerp(TEMP_TARGET_CAM, sitLerp);
+        camera.lookAt(TEMP_LOOK_AT);
       }
       return;
     }
@@ -584,7 +590,8 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
 
     // Direct 3D mesh update
     playerRef.current.position.copy(pos.current);
-    playerRef.current.rotation.y = rotY.current;
+    playerRef.current.rotation.order = 'XYZ';
+    playerRef.current.rotation.set(0, rotY.current, 0);
 
     // Full 360 Spherical Camera Follow around local player
     const horizDist = cameraDistance.current * Math.cos(cameraPitch.current);
@@ -592,7 +599,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
 
     const offsetX = Math.sin(cameraYaw.current) * horizDist;
     const offsetZ = Math.cos(cameraYaw.current) * horizDist;
-    const targetCameraPos = new THREE.Vector3(
+    TEMP_TARGET_CAM.set(
       pos.current.x + offsetX,
       pos.current.y + vertOffset,
       pos.current.z + offsetZ
@@ -600,7 +607,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
 
     // Frame-independent smooth damping guarantees buttery smooth follow on mobile
     const camAlpha = 1.0 - Math.exp(-8.0 * safeDelta);
-    camera.position.lerp(targetCameraPos, camAlpha);
+    camera.position.lerp(TEMP_TARGET_CAM, camAlpha);
     camera.lookAt(pos.current.x, pos.current.y + 1.25, pos.current.z);
 
     if (localAnimationState !== currentAnim) {

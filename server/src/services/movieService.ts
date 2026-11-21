@@ -203,8 +203,8 @@ export class MovieService {
           PartNumber: partNumber,
         });
 
-        // 2-hour window for upload
-        return getSignedUrl(this.s3Client!, uploadPartCommand, { expiresIn: 7200 });
+        // 6-hour window for upload
+        return getSignedUrl(this.s3Client!, uploadPartCommand, { expiresIn: 21600 });
       })
     );
 
@@ -298,9 +298,9 @@ export class MovieService {
 
   /**
    * Scans and aborts all stale or abandoned ongoing multipart uploads in Cloudflare R2
-   * Frees up all uncommitted multipart chunks older than maxAgeMinutes
+   * Frees up all uncommitted multipart chunks older than maxAgeMinutes (default 180 mins so large 500MB uploads are never aborted)
    */
-  public async cleanupStaleMultipartUploads(maxAgeMinutes: number = 15): Promise<number> {
+  public async cleanupStaleMultipartUploads(maxAgeMinutes: number = 180): Promise<number> {
     if (!this.s3Client) return 0;
 
     try {
@@ -354,7 +354,7 @@ export class MovieService {
   /**
    * Generates a secure, short-lived presigned download URL for cinema playback
    */
-  public async getPlaybackUrl(key: string, expiresInSeconds: number = 7200): Promise<string> {
+  public async getPlaybackUrl(key: string, expiresInSeconds: number = 21600): Promise<string> {
     if (!this.s3Client) {
       return `/api/movies/mock-stream/${key}`;
     }

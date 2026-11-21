@@ -5,6 +5,8 @@ import { useAppStore } from '../store/useAppStore';
 import { StylizedAvatar } from '../characters/StylizedAvatar';
 import { getSwingSeatTransform } from '../theatre/OutdoorStreetScene';
 
+const TEMP_REMOTE_TARGET = new THREE.Vector3();
+
 export const RemotePlayer: React.FC = () => {
   const otherPlayer = useAppStore((state) => state.otherPlayer);
   const showNameTags = useAppStore((state) => state.settings.showNameTags);
@@ -39,24 +41,28 @@ export const RemotePlayer: React.FC = () => {
       currentPos.current.set(swingTransform.x, swingTransform.y, swingTransform.z);
       currentRotY.current = swingTransform.rotY;
       groupRef.current.position.copy(currentPos.current);
-      groupRef.current.rotation.set(0, swingTransform.rotY, swingTransform.tiltZ);
+      groupRef.current.rotation.order = 'YXZ';
+      groupRef.current.rotation.set(swingTransform.tiltX, swingTransform.rotY, 0);
       return;
     }
 
+    // Normal standing / cinema seating
+    groupRef.current.rotation.order = 'XYZ';
+
     // Smooth network interpolation (LERP)
-    const targetPos = new THREE.Vector3(
+    TEMP_REMOTE_TARGET.set(
       otherPlayer.transform.x,
       otherPlayer.transform.y,
       otherPlayer.transform.z
     );
 
     // If distance is large (e.g. initial spawn or teleports), snap immediately
-    const dist = currentPos.current.distanceTo(targetPos);
+    const dist = currentPos.current.distanceTo(TEMP_REMOTE_TARGET);
     if (dist > 8.0) {
-      currentPos.current.copy(targetPos);
+      currentPos.current.copy(TEMP_REMOTE_TARGET);
       currentRotY.current = otherPlayer.transform.rotY;
     } else {
-      currentPos.current.lerp(targetPos, Math.min(1.0, safeDelta * 14));
+      currentPos.current.lerp(TEMP_REMOTE_TARGET, Math.min(1.0, safeDelta * 14));
 
       // Handle shortest angle rotation interpolation
       let diff = otherPlayer.transform.rotY - currentRotY.current;
@@ -66,7 +72,7 @@ export const RemotePlayer: React.FC = () => {
     }
 
     groupRef.current.position.copy(currentPos.current);
-    groupRef.current.rotation.y = currentRotY.current;
+    groupRef.current.rotation.set(0, currentRotY.current, 0);
   });
 
   if (!otherPlayer) return null;

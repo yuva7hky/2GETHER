@@ -11,6 +11,12 @@ export const ScreenMesh: React.FC = () => {
   const syncState = useAppStore((state) => state.syncState);
   const isPlaying = useAppStore((state) => state.isPlaying);
   const isHost = useAppStore((state) => state.isHost);
+  const isSitting = useAppStore((state) => state.isSitting);
+  const seatIndex = useAppStore((state) => state.seatIndex);
+
+  const isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+  const isSeatedInCinema = isSitting === true && (seatIndex === 0 || seatIndex === 1);
+  const useDomVideo = isAndroid && isSeatedInCinema;
 
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
   const [screenTexture, setScreenTexture] = useState<THREE.Texture | null>(null);
@@ -18,11 +24,11 @@ export const ScreenMesh: React.FC = () => {
   const screenRef = useRef<THREE.Mesh>(null);
   const projectorLightRef = useRef<THREE.SpotLight>(null);
 
-  // Offscreen 2D Canvas buffer refs to completely eliminate Android Chrome VideoTexture horizontal black bands
+  // Offscreen 2D Canvas buffer refs
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const offscreenCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const lastSyncBroadcastRef = useRef<number>(0);
-  const lastVideoTimeRef = useRef<number>(-1);
+  const rvfcRef = useRef<number>(0);
 
   // Setup HTML5 video element with clean 2D Canvas bridge
   useEffect(() => {
@@ -45,18 +51,19 @@ export const ScreenMesh: React.FC = () => {
 
     console.log('[ScreenMesh] Initializing movie playback stream:', resolvedUrl);
 
-    // 1. Offscreen canvas buffer (strictly synchronized, no tearing, macroblock-aligned)
+    // 1. Offscreen canvas buffer (CPU bitmap with willReadFrequently: true so texImage2D cannot sample a live Skia tile)
+    const maxW = isAndroid ? 854 : 1280;
+    const maxH = isAndroid ? 480 : 720;
     const canvas = document.createElement('canvas');
-    canvas.width = 1280;
-    canvas.height = 720;
-    // CRITICAL FIX: NEVER use desynchronized: true on Android — it causes mid-frame VSync scanline tearing (black stripes)
-    const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: false });
+    canvas.width = maxW;
+    canvas.height = maxH;
+    const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
     offscreenCanvasRef.current = canvas;
     offscreenCtxRef.current = ctx;
 
     // Initial warm standby fill
     if (ctx) {
-      ctx.fillStyle = '#0f0a1e';
+      ctx.fillStyle = '#0a0515';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
 
@@ -83,15 +90,15 @@ export const ScreenMesh: React.FC = () => {
     vid.preload = 'auto';
     vid.muted = true; // Start muted for reliable zero-latency mobile autoplay
 
-    // CRITICAL FIX: Active layout footprint (320x180) prevents Android MediaCodec occlusion subsampling / frame-drop artifacts
+    // Position video element; if seated on Android, will expand into full DOM layer via effect
     vid.style.position = 'fixed';
+    vid.style.left = '0';
     vid.style.bottom = '0';
-    vid.style.right = '0';
-    vid.style.width = '320px';
-    vid.style.height = '180px';
-    vid.style.opacity = '0.0001';
+    vid.style.width = '8px';
+    vid.style.height = '8px';
+    vid.style.opacity = '0.02';
+    vid.style.zIndex = '0';
     vid.style.pointerEvents = 'none';
-    vid.style.zIndex = '-9999';
     document.body.appendChild(vid);
 
     setVideoElement(vid);
@@ -119,6 +126,44 @@ export const ScreenMesh: React.FC = () => {
       console.error('[ScreenMesh] Video element error:', vid.error);
     };
 
+    // Drive texture upload from requestVideoFrameCallback on desktop / non-seated mode
+    let isCancelled = false;
+    const paint = () => {
+      if (isCancelled) return;
+      if ('requestVideoFrameCallback' in vid) {
+        rvfcRef.current = vid.requestVideoFrameCallback(() => {
+          const c = offscreenCanvasRef.current;
+          const cx = offscreenCtxRef.current;
+          if (!cx || !c || vid.readyState < 2) {
+            paint();
+            return;
+          }
+          const vw = vid.videoWidth || maxW;
+          const vh = vid.videoHeight || maxH;
+          const videoAspect = vw / vh;
+          const canvasAspect = maxW / maxH;
+          let dw = maxW;
+          let dh = maxH;
+          let dx = 0;
+          let dy = 0;
+          if (videoAspect > canvasAspect) {
+            dh = Math.round(maxW / videoAspect);
+            dy = Math.round((maxH - dh) / 2);
+          } else if (videoAspect < canvasAspect) {
+            dw = Math.round(maxH * videoAspect);
+            dx = Math.round((maxW - dw) / 2);
+          }
+          cx.fillStyle = '#0a0515';
+          cx.fillRect(0, 0, maxW, maxH);
+          cx.drawImage(vid, dx, dy, dw, dh);
+          cx.getImageData(0, 0, 1, 1); // Stalls CPU/GPU queue until Skia raster is 100% complete
+          canvasTexture.needsUpdate = true;
+          paint();
+        });
+      }
+    };
+    paint();
+
     // Global interaction listener to auto-unmute on first user touch / click
     const handleUserInteraction = () => {
       if (vid.muted) {
@@ -131,6 +176,10 @@ export const ScreenMesh: React.FC = () => {
     window.addEventListener('pointerdown', handleUserInteraction);
 
     return () => {
+      isCancelled = true;
+      if (rvfcRef.current && 'cancelVideoFrameCallback' in vid) {
+        vid.cancelVideoFrameCallback(rvfcRef.current);
+      }
       window.removeEventListener('pointerdown', handleUserInteraction);
       vid.pause();
       vid.src = '';
@@ -141,6 +190,36 @@ export const ScreenMesh: React.FC = () => {
       useAppStore.getState().setActiveVideoElement(null);
     };
   }, [currentMovie?.playbackUrl]);
+
+  // Responsive DOM Video layer for Android cinema mode
+  useEffect(() => {
+    if (!videoElement) return;
+    if (useDomVideo) {
+      videoElement.style.position = 'fixed';
+      videoElement.style.left = '0';
+      videoElement.style.top = '0';
+      videoElement.style.bottom = '0';
+      videoElement.style.width = '100vw';
+      videoElement.style.height = '100vh';
+      videoElement.style.objectFit = 'contain';
+      videoElement.style.background = '#000';
+      videoElement.style.opacity = '1';
+      videoElement.style.zIndex = '15'; // Below overlay controls (z-20 and z-30)
+      videoElement.style.pointerEvents = 'none';
+    } else {
+      videoElement.style.position = 'fixed';
+      videoElement.style.left = '0';
+      videoElement.style.top = 'auto';
+      videoElement.style.bottom = '0';
+      videoElement.style.width = '8px';
+      videoElement.style.height = '8px';
+      videoElement.style.objectFit = 'contain';
+      videoElement.style.background = 'transparent';
+      videoElement.style.opacity = '0.02';
+      videoElement.style.zIndex = '0';
+      videoElement.style.pointerEvents = 'none';
+    }
+  }, [useDomVideo, videoElement]);
 
   // Synchronize play / pause with intelligent mobile unlock
   useEffect(() => {
@@ -161,26 +240,38 @@ export const ScreenMesh: React.FC = () => {
     }
   }, [isPlaying, videoElement]);
 
-  // Handle incoming remote sync packet (Drift correction & Seek)
+  // Authoritative sync application with pitch preservation
   useEffect(() => {
     if (!videoElement || typeof syncState.currentTime !== 'number') return;
+    const mediaTime = syncState.currentTime;
+    const action = syncState.action || 'PLAY';
 
-    const latency = Math.max(0, (Date.now() - (syncState.timestamp || Date.now())) / 1000);
-    const targetTime = syncState.currentTime + (syncState.action === 'PLAY' ? latency : 0);
-    const drift = Math.abs(videoElement.currentTime - targetTime);
-
-    // Large drift (or explicit seek): snap immediately
-    if (drift > 1.2) {
-      videoElement.currentTime = targetTime;
-    } else if (drift > 0.25 && syncState.action === 'PLAY') {
-      // Minor drift: smoothly speed up / slow down to seamlessly catch up without audio popping
-      videoElement.playbackRate = videoElement.currentTime < targetTime ? 1.08 : 0.92;
-    } else {
-      videoElement.playbackRate = 1.0;
+    if (action === 'SEEK' || action === 'PAUSE') {
+      videoElement.playbackRate = 1;
+      if (Math.abs(videoElement.currentTime - mediaTime) > 0.05) {
+        videoElement.currentTime = mediaTime;
+      }
+      if (action === 'PAUSE' && !videoElement.paused) {
+        videoElement.pause();
+      }
+      return;
     }
-  }, [syncState.currentTime, syncState.action, syncState.timestamp, videoElement]);
 
-  // Frame Render Loop: Draw 2D canvas frame buffer & broadcast host sync heartbeat
+    const drift = videoElement.currentTime - mediaTime;
+    if (Math.abs(drift) > 0.8) {
+      videoElement.currentTime = mediaTime;
+      videoElement.playbackRate = 1;
+    } else if (drift > 0.12) {
+      videoElement.playbackRate = 0.96;
+    } else if (drift < -0.12) {
+      videoElement.playbackRate = 1.04;
+    } else {
+      videoElement.playbackRate = 1;
+    }
+    (videoElement as any).preservesPitch = true;
+  }, [syncState.currentTime, syncState.action, videoElement]);
+
+  // Frame Render Loop: Host sync heartbeat & projector atmospheric shimmer
   useFrame((state) => {
     const now = performance.now();
 
@@ -192,48 +283,7 @@ export const ScreenMesh: React.FC = () => {
       }
     }
 
-    // 2. Offscreen 2D canvas draw: fixed-resolution letterboxed rendering (Zero stride mismatch, zero tearing, zero black bands)
-    if (videoElement && offscreenCtxRef.current && offscreenCanvasRef.current && screenTexture) {
-      if (videoElement.readyState >= 2 && !videoElement.paused) {
-        const currTime = videoElement.currentTime;
-        // Only draw & upload when the video frame has actually advanced!
-        if (Math.abs(currTime - lastVideoTimeRef.current) > 0.015) {
-          lastVideoTimeRef.current = currTime;
-          const canvas = offscreenCanvasRef.current;
-          const ctx = offscreenCtxRef.current;
-
-          const vw = videoElement.videoWidth || 1280;
-          const vh = videoElement.videoHeight || 720;
-          const videoAspect = vw / vh;
-          const canvasAspect = 1280 / 720; // 1.7777...
-
-          let drawW = 1280;
-          let drawH = 720;
-          let drawX = 0;
-          let drawY = 0;
-
-          if (videoAspect > canvasAspect) {
-            // Wider than 16:9 (e.g. 21:9 cinemascope) -> letterbox top & bottom
-            drawH = Math.round(1280 / videoAspect);
-            drawY = Math.round((720 - drawH) / 2);
-          } else if (videoAspect < canvasAspect) {
-            // Taller than 16:9 (e.g. 4:3 or phone portrait 9:16) -> pillarbox left & right
-            drawW = Math.round(720 * videoAspect);
-            drawX = Math.round((1280 - drawW) / 2);
-          }
-
-          // Clear margin areas with clean cinema black
-          ctx.fillStyle = '#0a0515';
-          ctx.fillRect(0, 0, 1280, 720);
-
-          // Draw video cleanly centered without any stride or aspect ratio distortion
-          ctx.drawImage(videoElement, drawX, drawY, drawW, drawH);
-          screenTexture.needsUpdate = true;
-        }
-      }
-    }
-
-    // 3. Projector atmospheric shimmer
+    // 2. Projector atmospheric shimmer
     if (projectorLightRef.current) {
       const flicker = Math.sin(state.clock.getElapsedTime() * 10) * 0.05 + 0.95;
       projectorLightRef.current.intensity = isPlaying ? 2.5 * flicker : 1.2;
@@ -254,10 +304,10 @@ export const ScreenMesh: React.FC = () => {
         <meshStandardMaterial color="#d97706" metalness={0.85} roughness={0.2} />
       </mesh>
 
-      {/* Main Cinema Screen Canvas */}
+      {/* Main Cinema Screen Canvas (On Android while seated, DOM video renders in front, leaving mesh as dark plane) */}
       <mesh ref={screenRef} position={[0, 0, 0.05]}>
         <planeGeometry args={[13.6, 7.6]} />
-        {screenTexture && isVideoReady ? (
+        {screenTexture && isVideoReady && !useDomVideo ? (
           <meshBasicMaterial map={screenTexture} toneMapped={false} />
         ) : (
           <meshStandardMaterial

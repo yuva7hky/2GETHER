@@ -1,9 +1,57 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import * as THREE from 'three';
+import { useFrame } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 import { ScreenMesh } from './ScreenMesh';
 import { CoupleSeats } from './CoupleSeats';
 import { OutdoorStreetScene } from './OutdoorStreetScene';
+
+// Shared module-level materials matching reference Image 2 (prevents GC pressure & per-render allocations)
+const wallMat = new THREE.MeshStandardMaterial({
+  color: '#1a0e2e',
+  roughness: 0.85,
+});
+
+const carpetMat = new THREE.MeshStandardMaterial({
+  color: '#0d071a',
+  roughness: 0.9,
+});
+
+const goldTrimMat = new THREE.MeshStandardMaterial({
+  color: '#d97706',
+  metalness: 0.8,
+  roughness: 0.25,
+});
+
+const curtainMat = new THREE.MeshStandardMaterial({
+  color: '#9f1239', // Crimson velvet stage curtains
+  roughness: 0.65,
+});
+
+const redSeatMat = new THREE.MeshStandardMaterial({
+  color: '#be123c', // Crimson velvet seats
+  roughness: 0.55,
+});
+
+const darkSeatBaseMat = new THREE.MeshStandardMaterial({
+  color: '#1c1917',
+  roughness: 0.8,
+});
+
+const speakerMat = new THREE.MeshStandardMaterial({
+  color: '#0f172a',
+  roughness: 0.7,
+});
+
+const plantLeafMat = new THREE.MeshStandardMaterial({
+  color: '#166534',
+  roughness: 0.6,
+});
+
+const planterMat = new THREE.MeshStandardMaterial({
+  color: '#292524',
+  roughness: 0.7,
+});
 
 interface TheatreSceneProps {
   leftSeatOccupied?: boolean;
@@ -30,51 +78,18 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
   onPickupKey,
   onUnlockDoor,
 }) => {
-  // Materials matching reference Image 2
-  const wallMat = new THREE.MeshStandardMaterial({
-    color: '#1a0e2e',
-    roughness: 0.85,
-  });
+  const auditoriumGroupRef = useRef<THREE.Group>(null);
+  const outdoorGroupRef = useRef<THREE.Group>(null);
 
-  const carpetMat = new THREE.MeshStandardMaterial({
-    color: '#0d071a',
-    roughness: 0.9,
-  });
-
-  const goldTrimMat = new THREE.MeshStandardMaterial({
-    color: '#d97706',
-    metalness: 0.8,
-    roughness: 0.25,
-  });
-
-  const curtainMat = new THREE.MeshStandardMaterial({
-    color: '#9f1239', // Crimson velvet stage curtains
-    roughness: 0.65,
-  });
-
-  const redSeatMat = new THREE.MeshStandardMaterial({
-    color: '#be123c', // Crimson velvet seats
-    roughness: 0.55,
-  });
-
-  const darkSeatBaseMat = new THREE.MeshStandardMaterial({
-    color: '#1c1917',
-    roughness: 0.8,
-  });
-
-  const speakerMat = new THREE.MeshStandardMaterial({
-    color: '#0f172a',
-    roughness: 0.7,
-  });
-
-  const plantLeafMat = new THREE.MeshStandardMaterial({
-    color: '#166534',
-    roughness: 0.6,
-  });
-
-  const planterMat = new THREE.MeshStandardMaterial({
-    color: '#292524',
-    roughness: 0.7,
+  // Dynamic Zone Culling: hides non-visible zones based on camera depth to guarantee high mobile FPS
+  useFrame((state) => {
+    const camZ = state.camera.position.z;
+    if (auditoriumGroupRef.current) {
+      auditoriumGroupRef.current.visible = camZ < 15.0;
+    }
+    if (outdoorGroupRef.current) {
+      outdoorGroupRef.current.visible = camZ > 8.0;
+    }
   });
 
   // Reusable Cinema Seat Unit
@@ -112,7 +127,9 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
 
   return (
     <group>
-      {/* 1. MAIN THEATRE FLOOR */}
+      {/* AUDITORIUM INTERIOR ZONE (Culled when exploring outside in the street) */}
+      <group ref={auditoriumGroupRef}>
+        {/* 1. MAIN THEATRE FLOOR */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
         <planeGeometry args={[18, 22]} />
         <primitive object={carpetMat} />
@@ -477,8 +494,10 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
         canSitPrompt={canSitPrompt}
         suggestedSeatIndex={suggestedSeatIndex}
       />
+    </group>
 
-      {/* 12. OUTDOOR STREET SCENE, MARQUEE, AND INTERACTIVE DOORS (Z >= 11) */}
+    {/* 12. OUTDOOR STREET SCENE, MARQUEE, AND INTERACTIVE DOORS (Culled when inside auditorium watching movie) */}
+    <group ref={outdoorGroupRef}>
       <OutdoorStreetScene
         canPickupKey={canPickupKey}
         canUnlockDoor={canUnlockDoor}
@@ -486,5 +505,6 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
         onUnlockDoor={onUnlockDoor}
       />
     </group>
-  );
+  </group>
+);
 };

@@ -33,29 +33,20 @@ export const SWING_SEATS = [
 ];
 
 export function getSwingSeatTransform(seatIndex: number, time: number) {
-  const isSeat11 = seatIndex === 11;
-  const lx = isSeat11 ? 0.42 : -0.42;
-
   const theta = Math.sin(time * 1.5) * 0.16;
-  const y_rel = -2.26;
-  const z_rel = 0.02;
-
-  // Exact 3D rotation in Y-Z plane around X-axis (matches swingBenchRef.rotation.x)
-  const y_rot = y_rel * Math.cos(theta) - z_rel * Math.sin(theta);
-  const z_rot = y_rel * Math.sin(theta) + z_rel * Math.cos(theta);
-
-  // Swing base is at [4.6, 0, 32.0], rotated -Math.PI / 2 around Y:
-  // Local +Z rotates to World -X, local -Z rotates to World +X
-  const world_x = 4.6 - z_rot;
-  const world_y = 3.1 + y_rot - 0.28; // -0.28 places pelvis cleanly on velvet cushion
-  const world_z = 32.0 + lx;
+  const lx = seatIndex === 11 || seatIndex === 1 ? 0.42 : -0.42;
+  const HIP_DROP = 0.33; // pelvis offset along the seat normal
+  const yRel = -2.21 - HIP_DROP * Math.cos(theta);
+  const zRel = 0.02 - HIP_DROP * Math.sin(theta);
+  const yRot = yRel * Math.cos(theta) - zRel * Math.sin(theta);
+  const zRot = yRel * Math.sin(theta) + zRel * Math.cos(theta);
 
   return {
-    x: world_x,
-    y: world_y,
-    z: world_z,
+    x: 4.6 - zRot,
+    y: 3.1 + yRot,
+    z: 32.0 + lx,
     rotY: -Math.PI / 2,
-    tiltZ: theta,
+    tiltX: theta,
   };
 }
 
