@@ -128,34 +128,33 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
 
     if (isSitting) {
       const isSwing = seatIndex === 10 || seatIndex === 11;
-      const swingSway = isSwing ? Math.sin(t * 1.5) * 0.14 : 0;
-      const swingPendulum = isSwing ? Math.cos(t * 1.5) * 0.08 : 0;
 
-      // Sitting posture
+      // Sitting posture cleanly resting on seat / cushion
       if (bodyRef.current) {
         bodyRef.current.position.y = 0.45;
-        bodyRef.current.rotation.x = swingSway;
-        bodyRef.current.rotation.z = swingPendulum * 0.2;
+        bodyRef.current.rotation.set(0, 0, 0);
       }
       if (headRef.current) {
         headRef.current.position.y = 1.05;
-        headRef.current.rotation.x = swingSway * 0.8 + Math.sin(t * 1.5) * 0.04;
+        headRef.current.rotation.x = Math.sin(t * 1.5) * 0.04;
         headRef.current.rotation.y = Math.sin(t * 0.8) * 0.08;
       }
       if (leftLegRef.current) {
-        leftLegRef.current.rotation.x = -Math.PI / 2 + (isSwing ? Math.sin(t * 1.5) * 0.15 : 0);
+        // Natural relaxed knee bend dangling from bench
+        leftLegRef.current.rotation.x = -Math.PI / 2.2 + (isSwing ? Math.sin(t * 1.5) * 0.12 : 0);
         leftLegRef.current.position.set(-0.18, 0.45, 0.25);
       }
       if (rightLegRef.current) {
-        rightLegRef.current.rotation.x = -Math.PI / 2 + (isSwing ? Math.sin(t * 1.5) * 0.15 : 0);
+        rightLegRef.current.rotation.x = -Math.PI / 2.2 + (isSwing ? Math.sin(t * 1.5) * 0.12 : 0);
         rightLegRef.current.position.set(0.18, 0.45, 0.25);
       }
       if (leftArmRef.current) {
-        leftArmRef.current.rotation.x = -Math.PI / 6;
+        // Holding onto swing chain / side
+        leftArmRef.current.rotation.x = -Math.PI / 5;
         leftArmRef.current.position.set(-0.36, 0.65, 0.15);
       }
       if (rightArmRef.current) {
-        rightArmRef.current.rotation.x = -Math.PI / 6;
+        rightArmRef.current.rotation.x = -Math.PI / 5;
         rightArmRef.current.position.set(0.36, 0.65, 0.15);
       }
       return;

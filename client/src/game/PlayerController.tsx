@@ -11,6 +11,7 @@ import {
   THEATRE_DOOR_POS,
   SWING_POS,
   SWING_SEATS,
+  getSwingSeatTransform,
 } from '../theatre/OutdoorStreetScene';
 
 interface PlayerControllerProps {
@@ -292,10 +293,18 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
         // Step forward onto street runway in front of swing
         pos.current.set(3.4, 0, 32.0);
         rotY.current = 0;
+        if (playerRef.current) {
+          playerRef.current.position.set(3.4, 0, 32.0);
+          playerRef.current.rotation.set(0, 0, 0);
+        }
       } else {
         // Stand in cinema aisle
         pos.current.z = 1.9;
         pos.current.y = 0;
+        if (playerRef.current) {
+          playerRef.current.position.set(pos.current.x, 0, 1.9);
+          playerRef.current.rotation.set(0, Math.PI, 0);
+        }
       }
       setSitting(false, null);
       setLocalAnimationState('IDLE');
@@ -320,7 +329,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
         targetSeat = d0 <= d1 ? SWING_SEATS[0] : SWING_SEATS[1];
       }
 
-      pos.current.set(targetSeat.x, 0, targetSeat.z);
+      pos.current.set(targetSeat.x, targetSeat.y, targetSeat.z);
       rotY.current = targetSeat.rotY;
       setSitting(true, targetSeat.seatIndex);
       setLocalAnimationState('SIT');
@@ -425,17 +434,26 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
 
     // If sitting, lock position and frame cinema / swing view
     if (isSitting) {
-      playerRef.current.position.copy(pos.current);
-      playerRef.current.rotation.y = rotY.current;
-
       if (seatIndex === 10 || seatIndex === 11) {
+        // Dynamic Swing Motion: avatars sway back and forth in perfect unison with the swing bench!
+        const t = state.clock.getElapsedTime();
+        const swingTransform = getSwingSeatTransform(seatIndex, t);
+        pos.current.set(swingTransform.x, swingTransform.y, swingTransform.z);
+        rotY.current = swingTransform.rotY;
+
+        playerRef.current.position.copy(pos.current);
+        playerRef.current.rotation.set(0, rotY.current, swingTransform.tiltZ);
+
         // Romantic street swing camera view - couple framing
-        const targetCamPos = new THREE.Vector3(1.6, 1.7, 32.0);
-        const lookAtPos = new THREE.Vector3(4.6, 1.35, 32.0);
+        const targetCamPos = new THREE.Vector3(1.5, 1.8, 32.0);
+        const lookAtPos = new THREE.Vector3(4.6, 1.4, 32.0);
         const sitLerp = Math.min(1.0, safeDelta * 3.5);
         camera.position.lerp(targetCamPos, sitLerp);
         camera.lookAt(lookAtPos);
       } else {
+        playerRef.current.position.copy(pos.current);
+        playerRef.current.rotation.set(0, rotY.current, 0);
+
         // Cinematic couple camera view when sitting in theatre
         const targetCamPos = new THREE.Vector3(0, 2.5, pos.current.z + 4.2);
         const lookAtPos = new THREE.Vector3(0, 4.6, -9.5); // Cinema screen center

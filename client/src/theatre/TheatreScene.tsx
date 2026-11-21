@@ -188,14 +188,15 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
         <primitive object={goldTrimMat} />
       </mesh>
 
-      {/* Stage Recessed Footlights Array (Image 2) */}
+      {/* Stage Recessed Footlights Array (Efficient dual-point fill with 9 glowing bulbs) */}
+      <pointLight position={[-3, 0.8, -7.8]} color="#fbbf24" intensity={0.8} distance={5.5} />
+      <pointLight position={[3, 0.8, -7.8]} color="#fbbf24" intensity={0.8} distance={5.5} />
       {[-6, -4.5, -3, -1.5, 0, 1.5, 3, 4.5, 6].map((x, idx) => (
         <group key={`footlight-${idx}`} position={[x, 0.72, -7.86]}>
           <mesh>
             <cylinderGeometry args={[0.08, 0.08, 0.05, 16]} />
             <meshBasicMaterial color="#fef08a" />
           </mesh>
-          <pointLight color="#fbbf24" intensity={0.4} distance={3.5} />
         </group>
       ))}
 
@@ -354,7 +355,9 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
               <cylinderGeometry args={[0.1, 0.07, 0.38, 16]} />
               <primitive object={goldTrimMat} />
             </mesh>
-            <pointLight color="#f59e0b" intensity={0.55} distance={5.5} />
+            {(zPos === -1 || zPos === 4) && (
+              <pointLight color="#f59e0b" intensity={0.7} distance={6.0} />
+            )}
           </group>
 
           {/* Right Wall Sconce */}
@@ -363,7 +366,9 @@ export const TheatreScene: React.FC<TheatreSceneProps> = ({
               <cylinderGeometry args={[0.1, 0.07, 0.38, 16]} />
               <primitive object={goldTrimMat} />
             </mesh>
-            <pointLight color="#f59e0b" intensity={0.55} distance={5.5} />
+            {(zPos === -1 || zPos === 4) && (
+              <pointLight color="#f59e0b" intensity={0.7} distance={6.0} />
+            )}
           </group>
         </group>
       ))}

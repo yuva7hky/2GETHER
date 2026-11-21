@@ -12,6 +12,9 @@ import { profileRoutes } from './routes/profileRoutes.js';
 import { setupSocketHandler } from './socket/socketHandler.js';
 
 const app = express();
+// Enable reverse-proxy trust for Render, Cloudflare, and Vercel load balancers
+app.set('trust proxy', 1);
+
 const server = http.createServer(app);
 
 const checkOrigin = (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
@@ -19,7 +22,7 @@ const checkOrigin = (origin: string | undefined, callback: (err: Error | null, a
   callback(null, true);
 };
 
-// Socket.IO configuration with CORS
+// High-concurrency Socket.IO configuration with CORS and zero compression overhead
 const io = new Server(server, {
   cors: {
     origin: checkOrigin,
@@ -28,6 +31,9 @@ const io = new Server(server, {
   },
   pingInterval: 10000,
   pingTimeout: 5000,
+  transports: ['websocket', 'polling'],
+  perMessageDeflate: false, // Disabling per-message zlib eliminates CPU bottleneck under multi-user concurrency
+  maxHttpBufferSize: 1e7,
 });
 
 // Middleware

@@ -201,11 +201,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
               handleSit();
             }}
             onClick={handleSit}
-            className={`w-13 h-13 p-3 rounded-2xl flex flex-col items-center justify-center backdrop-blur-md border text-white transition-all active:scale-95 shadow-lg ${
-              isSitting
+            className={`w-13 h-13 p-3 rounded-2xl flex flex-col items-center justify-center backdrop-blur-md border text-white transition-all active:scale-95 shadow-lg ${isSitting
                 ? 'bg-theatre-pink border-theatre-gold shadow-glow-pink'
                 : 'bg-theatre-surface/85 border-white/20'
-            }`}
+              }`}
             title={isSitting ? 'Stand Up' : 'Sit Down'}
           >
             <Armchair className="w-5 h-5" />
@@ -222,11 +221,10 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
               toggleRun();
             }}
             onClick={toggleRun}
-            className={`w-13 h-13 p-3 rounded-2xl flex flex-col items-center justify-center backdrop-blur-md border transition-all active:scale-95 shadow-lg ${
-              isRunning
+            className={`w-13 h-13 p-3 rounded-2xl flex flex-col items-center justify-center backdrop-blur-md border transition-all active:scale-95 shadow-lg ${isRunning
                 ? 'bg-theatre-gold border-amber-300 text-theatre-darkest shadow-glow-gold'
                 : 'bg-theatre-surface/85 border-white/20 text-white'
-            }`}
+              }`}
             title="Toggle Sprint"
           >
             <Zap className={`w-5 h-5 ${isRunning ? 'fill-current' : ''}`} />

@@ -22,6 +22,7 @@ export const ScreenMesh: React.FC = () => {
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const offscreenCtxRef = useRef<CanvasRenderingContext2D | null>(null);
   const lastSyncBroadcastRef = useRef<number>(0);
+  const lastVideoTimeRef = useRef<number>(-1);
 
   // Setup HTML5 video element with clean 2D Canvas bridge
   useEffect(() => {
@@ -44,11 +45,12 @@ export const ScreenMesh: React.FC = () => {
 
     console.log('[ScreenMesh] Initializing movie playback stream:', resolvedUrl);
 
-    // 1. Offscreen canvas buffer (bypasses Android GPU macroblock stride tiling bug)
+    // 1. Offscreen canvas buffer (strictly synchronized, no tearing, macroblock-aligned)
     const canvas = document.createElement('canvas');
     canvas.width = 1280;
     canvas.height = 720;
-    const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+    // CRITICAL FIX: NEVER use desynchronized: true on Android — it causes mid-frame VSync scanline tearing (black stripes)
+    const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: false });
     offscreenCanvasRef.current = canvas;
     offscreenCtxRef.current = ctx;
 
@@ -59,6 +61,8 @@ export const ScreenMesh: React.FC = () => {
     }
 
     const canvasTexture = new THREE.CanvasTexture(canvas);
+    canvasTexture.wrapS = THREE.ClampToEdgeWrapping;
+    canvasTexture.wrapT = THREE.ClampToEdgeWrapping;
     canvasTexture.minFilter = THREE.LinearFilter;
     canvasTexture.magFilter = THREE.LinearFilter;
     canvasTexture.generateMipmaps = false;
@@ -78,13 +82,13 @@ export const ScreenMesh: React.FC = () => {
     vid.preload = 'auto';
     vid.muted = true; // Start muted for reliable zero-latency mobile autoplay
 
-    // Invisible DOM attachment so mobile browsers treat video as an active surface
+    // CRITICAL FIX: Active layout footprint (320x180) prevents Android MediaCodec occlusion subsampling / frame-drop artifacts
     vid.style.position = 'fixed';
-    vid.style.top = '0';
-    vid.style.left = '0';
-    vid.style.width = '1px';
-    vid.style.height = '1px';
-    vid.style.opacity = '0.001';
+    vid.style.bottom = '0';
+    vid.style.right = '0';
+    vid.style.width = '320px';
+    vid.style.height = '180px';
+    vid.style.opacity = '0.0001';
     vid.style.pointerEvents = 'none';
     vid.style.zIndex = '-9999';
     document.body.appendChild(vid);
@@ -104,10 +108,19 @@ export const ScreenMesh: React.FC = () => {
       if (vid.duration && !isNaN(vid.duration)) {
         useAppStore.getState().setMovieDuration(vid.duration);
       }
-      if (vid.videoWidth && vid.videoHeight) {
-        canvas.width = vid.videoWidth;
-        canvas.height = vid.videoHeight;
+      // Macroblock-aligned multiple-of-16 resolution cap for optimal mobile memory bandwidth
+      const isMobile = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
+      const maxDim = isMobile ? 960 : 1280;
+      let w = vid.videoWidth || 1280;
+      let h = vid.videoHeight || 720;
+      if (w > maxDim) {
+        h = Math.round((h * maxDim) / w);
+        w = maxDim;
       }
+      w = Math.max(16, Math.floor(w / 16) * 16);
+      h = Math.max(16, Math.floor(h / 16) * 16);
+      canvas.width = w;
+      canvas.height = h;
     };
 
     vid.ontimeupdate = () => {
@@ -191,20 +204,18 @@ export const ScreenMesh: React.FC = () => {
       }
     }
 
-    // 2. Offscreen 2D canvas draw: cleanly renders video frame to texture without macroblock tearing
+    // 2. Offscreen 2D canvas draw: throttled to actual video playback frames (Zero CPU/GPU waste, zero tearing)
     if (videoElement && offscreenCtxRef.current && offscreenCanvasRef.current && screenTexture) {
       if (videoElement.readyState >= 2 && !videoElement.paused) {
-        const canvas = offscreenCanvasRef.current;
-        const ctx = offscreenCtxRef.current;
-
-        // Auto-match canvas size to video aspect ratio
-        if (videoElement.videoWidth && canvas.width !== videoElement.videoWidth) {
-          canvas.width = videoElement.videoWidth;
-          canvas.height = videoElement.videoHeight;
+        const currTime = videoElement.currentTime;
+        // Only draw & upload when the video frame has actually advanced!
+        if (Math.abs(currTime - lastVideoTimeRef.current) > 0.015) {
+          lastVideoTimeRef.current = currTime;
+          const canvas = offscreenCanvasRef.current;
+          const ctx = offscreenCtxRef.current;
+          ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+          screenTexture.needsUpdate = true;
         }
-
-        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
-        screenTexture.needsUpdate = true;
       }
     }
 

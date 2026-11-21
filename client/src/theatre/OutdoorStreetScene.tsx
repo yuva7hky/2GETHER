@@ -25,12 +25,37 @@ export const LAMPPOST_POSITIONS: [number, number, number][] = [
 export const PRESSURE_PLATE_POS: [number, number, number] = [2.4, 0.04, 12.2];
 export const THEATRE_DOOR_POS: [number, number, number] = [0, 0, 11.0];
 
-// Romantic 2-Player Street Swing Position & Seat Offsets
+// Romantic 2-Player Street Swing Position & Dynamic Pendulum Physics Helper
 export const SWING_POS: [number, number, number] = [4.6, 0, 32.0];
 export const SWING_SEATS = [
-  { x: 4.6, y: 0, z: 31.55, seatIndex: 10, rotY: -Math.PI / 2 }, // Swing Left Seat (Boy)
-  { x: 4.6, y: 0, z: 32.45, seatIndex: 11, rotY: -Math.PI / 2 }, // Swing Right Seat (Girl)
+  { x: 4.6, y: 0.61, z: 31.58, seatIndex: 10, rotY: -Math.PI / 2 }, // Swing Left Seat (Boy)
+  { x: 4.6, y: 0.61, z: 32.42, seatIndex: 11, rotY: -Math.PI / 2 }, // Swing Right Seat (Girl)
 ];
+
+export function getSwingSeatTransform(seatIndex: number, time: number) {
+  const isSeat11 = seatIndex === 11;
+  const lx = isSeat11 ? 0.42 : -0.42;
+
+  const theta = Math.sin(time * 1.5) * 0.16;
+  const L = 2.4;
+  const yCushionRel = 0.19;
+
+  // Local swing coordinates relative to swing base
+  const ly = 3.1 - (L - yCushionRel) * Math.cos(theta);
+  const lz = (L - yCushionRel) * Math.sin(theta);
+
+  // Avatar sitting offset: buttocks sits right on the plush velvet cushion surface
+  const avatarY = ly - 0.28;
+
+  // Transform to world coordinates (swing origin at [4.6, 0, 32.0], rotY = -Math.PI / 2)
+  return {
+    x: 4.6 - lz,
+    y: avatarY,
+    z: 32.0 + lx,
+    rotY: -Math.PI / 2,
+    tiltZ: -theta,
+  };
+}
 
 interface OutdoorStreetSceneProps {
   canPickupKey?: boolean;
@@ -107,9 +132,9 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
       marqueeSignRef.current.rotation.z = Math.sin(t * 1.5) * 0.003;
     }
 
-    // 5. Romantic 2-Player Street Swing Pendulum Physics
+    // 5. Romantic 2-Player Street Swing Pendulum Physics (swings along local Z)
     if (swingBenchRef.current) {
-      swingBenchRef.current.rotation.z = Math.sin(t * 1.5) * 0.14;
+      swingBenchRef.current.rotation.x = Math.sin(t * 1.5) * 0.16;
     }
   });
 
@@ -328,15 +353,13 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
           <meshStandardMaterial color="#f59e0b" metalness={0.8} roughness={0.2} />
         </mesh>
 
-        {/* Twinkling Fairy Lights String */}
+        {/* Twinkling Fairy Lights String (Efficient single-point warm illumination) */}
+        <pointLight position={[0, 3.05, 0]} color="#fef08a" intensity={0.65} distance={3.8} />
         {[-0.9, -0.45, 0, 0.45, 0.9].map((xOff, i) => (
-          <group key={`fairylight-${i}`} position={[xOff, 3.05, 0]}>
-            <mesh>
-              <sphereGeometry args={[0.04, 8, 8]} />
-              <meshBasicMaterial color={i % 2 === 0 ? '#fef08a' : '#fbcfe8'} />
-            </mesh>
-            <pointLight color="#fef08a" intensity={0.25} distance={2.0} />
-          </group>
+          <mesh key={`fairylight-${i}`} position={[xOff, 3.05, 0]}>
+            <sphereGeometry args={[0.04, 8, 8]} />
+            <meshBasicMaterial color={i % 2 === 0 ? '#fef08a' : '#fbcfe8'} />
+          </mesh>
         ))}
 
         {/* SWINGING BENCH ASSEMBLY (Animated pendulum sway) */}

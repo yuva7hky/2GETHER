@@ -3,6 +3,7 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useAppStore } from '../store/useAppStore';
 import { StylizedAvatar } from '../characters/StylizedAvatar';
+import { getSwingSeatTransform } from '../theatre/OutdoorStreetScene';
 
 export const RemotePlayer: React.FC = () => {
   const otherPlayer = useAppStore((state) => state.otherPlayer);
@@ -30,6 +31,17 @@ export const RemotePlayer: React.FC = () => {
   useFrame((state, delta) => {
     if (!otherPlayer || !groupRef.current) return;
     const safeDelta = Math.min(0.05, Math.max(0.001, delta));
+
+    // Dynamic Swing Motion for remote partner
+    if (otherPlayer.isSitting && (otherPlayer.seatIndex === 10 || otherPlayer.seatIndex === 11)) {
+      const t = state.clock.getElapsedTime();
+      const swingTransform = getSwingSeatTransform(otherPlayer.seatIndex, t);
+      currentPos.current.set(swingTransform.x, swingTransform.y, swingTransform.z);
+      currentRotY.current = swingTransform.rotY;
+      groupRef.current.position.copy(currentPos.current);
+      groupRef.current.rotation.set(0, swingTransform.rotY, swingTransform.tiltZ);
+      return;
+    }
 
     // Smooth network interpolation (LERP)
     const targetPos = new THREE.Vector3(
