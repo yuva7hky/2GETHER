@@ -25,8 +25,8 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   onUnlockDoor,
 }) => {
   const joystickBaseRef = useRef<HTMLDivElement>(null);
-  const [knobPos, setKnobPos] = useState({ x: 0, y: 0 });
-  const [activeTouchId, setActiveTouchId] = useState<number | null>(null);
+  const joystickKnobRef = useRef<HTMLDivElement>(null);
+  const activeTouchId = useRef<number | null>(null);
   const [isRunning, setIsRunning] = useState(false);
 
   const hapticFeedback = () => {
@@ -38,9 +38,9 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   const handleTouchStart = (e: React.TouchEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    if (activeTouchId !== null) return;
+    if (activeTouchId.current !== null) return;
     const touch = e.changedTouches[0];
-    setActiveTouchId(touch.identifier);
+    activeTouchId.current = touch.identifier;
     updateJoystick(touch.clientX, touch.clientY);
   };
 
@@ -48,7 +48,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
     e.preventDefault();
     e.stopPropagation();
     for (let i = 0; i < e.changedTouches.length; i++) {
-      if (e.changedTouches[i].identifier === activeTouchId) {
+      if (e.changedTouches[i].identifier === activeTouchId.current) {
         updateJoystick(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
         break;
       }
@@ -59,9 +59,11 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
     e.preventDefault();
     e.stopPropagation();
     for (let i = 0; i < e.changedTouches.length; i++) {
-      if (e.changedTouches[i].identifier === activeTouchId) {
-        setActiveTouchId(null);
-        setKnobPos({ x: 0, y: 0 });
+      if (e.changedTouches[i].identifier === activeTouchId.current) {
+        activeTouchId.current = null;
+        if (joystickKnobRef.current) {
+          joystickKnobRef.current.style.transform = 'translate(0px, 0px)';
+        }
         onVectorChange({ x: 0, y: 0 });
         break;
       }
@@ -84,7 +86,9 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
       dy = (dy / dist) * maxRadius;
     }
 
-    setKnobPos({ x: dx, y: dy });
+    if (joystickKnobRef.current) {
+      joystickKnobRef.current.style.transform = `translate(${dx}px, ${dy}px)`;
+    }
     onVectorChange({
       x: dx / maxRadius,
       y: dy / maxRadius,
@@ -144,10 +148,8 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
 
         {/* Dynamic Glowing Joystick Knob */}
         <div
+          ref={joystickKnobRef}
           className="w-12 h-12 rounded-full bg-gradient-to-tr from-theatre-pink via-rose-500 to-theatre-gold shadow-lg flex items-center justify-center pointer-events-none transition-transform duration-75"
-          style={{
-            transform: `translate(${knobPos.x}px, ${knobPos.y}px)`,
-          }}
         >
           <div className="w-4 h-4 rounded-full bg-white/80 shadow-sm" />
         </div>

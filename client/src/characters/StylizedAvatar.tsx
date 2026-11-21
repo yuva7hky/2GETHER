@@ -10,6 +10,7 @@ interface StylizedAvatarProps {
   appearance: CharacterAppearance;
   animationState: CharacterAnimationState;
   isSitting?: boolean;
+  seatIndex?: number | null;
   isLocal?: boolean;
   showNameTag?: boolean;
 }
@@ -19,6 +20,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
   appearance,
   animationState,
   isSitting = false,
+  seatIndex = null,
   isLocal = false,
   showNameTag = true,
 }) => {
@@ -125,19 +127,27 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
     const t = state.clock.getElapsedTime();
 
     if (isSitting) {
+      const isSwing = seatIndex === 10 || seatIndex === 11;
+      const swingSway = isSwing ? Math.sin(t * 1.5) * 0.14 : 0;
+      const swingPendulum = isSwing ? Math.cos(t * 1.5) * 0.08 : 0;
+
       // Sitting posture
-      if (bodyRef.current) bodyRef.current.position.y = 0.45;
+      if (bodyRef.current) {
+        bodyRef.current.position.y = 0.45;
+        bodyRef.current.rotation.x = swingSway;
+        bodyRef.current.rotation.z = swingPendulum * 0.2;
+      }
       if (headRef.current) {
         headRef.current.position.y = 1.05;
-        headRef.current.rotation.x = Math.sin(t * 1.5) * 0.04;
+        headRef.current.rotation.x = swingSway * 0.8 + Math.sin(t * 1.5) * 0.04;
         headRef.current.rotation.y = Math.sin(t * 0.8) * 0.08;
       }
       if (leftLegRef.current) {
-        leftLegRef.current.rotation.x = -Math.PI / 2;
+        leftLegRef.current.rotation.x = -Math.PI / 2 + (isSwing ? Math.sin(t * 1.5) * 0.15 : 0);
         leftLegRef.current.position.set(-0.18, 0.45, 0.25);
       }
       if (rightLegRef.current) {
-        rightLegRef.current.rotation.x = -Math.PI / 2;
+        rightLegRef.current.rotation.x = -Math.PI / 2 + (isSwing ? Math.sin(t * 1.5) * 0.15 : 0);
         rightLegRef.current.position.set(0.18, 0.45, 0.25);
       }
       if (leftArmRef.current) {

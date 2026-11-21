@@ -3,20 +3,27 @@ import { useFrame } from '@react-three/fiber';
 import { Text } from '@react-three/drei';
 import * as THREE from 'three';
 import { useAppStore } from '../store/useAppStore';
+import { socketService } from '../services/socketService';
 import { apiUrl } from '../services/apiConfig';
 
 export const ScreenMesh: React.FC = () => {
   const currentMovie = useAppStore((state) => state.currentMovie);
   const syncState = useAppStore((state) => state.syncState);
   const isPlaying = useAppStore((state) => state.isPlaying);
+  const isHost = useAppStore((state) => state.isHost);
 
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
-  const [videoTexture, setVideoTexture] = useState<THREE.VideoTexture | null>(null);
+  const [screenTexture, setScreenTexture] = useState<THREE.Texture | null>(null);
   const [isVideoReady, setIsVideoReady] = useState(false);
   const screenRef = useRef<THREE.Mesh>(null);
   const projectorLightRef = useRef<THREE.SpotLight>(null);
 
-  // Setup HTML5 video element with mobile hardware decoder stabilization
+  // Offscreen 2D Canvas buffer refs to completely eliminate Android Chrome VideoTexture horizontal black bands
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const offscreenCtxRef = useRef<CanvasRenderingContext2D | null>(null);
+  const lastSyncBroadcastRef = useRef<number>(0);
+
+  // Setup HTML5 video element with clean 2D Canvas bridge
   useEffect(() => {
     if (!currentMovie?.playbackUrl) {
       if (videoElement) {
@@ -26,7 +33,7 @@ export const ScreenMesh: React.FC = () => {
           videoElement.parentNode.removeChild(videoElement);
         }
         setVideoElement(null);
-        setVideoTexture(null);
+        setScreenTexture(null);
         setIsVideoReady(false);
       }
       return;
@@ -37,6 +44,28 @@ export const ScreenMesh: React.FC = () => {
 
     console.log('[ScreenMesh] Initializing movie playback stream:', resolvedUrl);
 
+    // 1. Offscreen canvas buffer (bypasses Android GPU macroblock stride tiling bug)
+    const canvas = document.createElement('canvas');
+    canvas.width = 1280;
+    canvas.height = 720;
+    const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+    offscreenCanvasRef.current = canvas;
+    offscreenCtxRef.current = ctx;
+
+    // Initial warm standby fill
+    if (ctx) {
+      ctx.fillStyle = '#0f0a1e';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    const canvasTexture = new THREE.CanvasTexture(canvas);
+    canvasTexture.minFilter = THREE.LinearFilter;
+    canvasTexture.magFilter = THREE.LinearFilter;
+    canvasTexture.generateMipmaps = false;
+    canvasTexture.colorSpace = THREE.SRGBColorSpace;
+    setScreenTexture(canvasTexture);
+
+    // 2. Video element
     const vid = document.createElement('video');
     vid.src = resolvedUrl;
     vid.crossOrigin = 'anonymous';
@@ -47,9 +76,9 @@ export const ScreenMesh: React.FC = () => {
     vid.setAttribute('x5-playsinline', 'true');
     vid.setAttribute('controlslist', 'nodownload nofullscreen');
     vid.preload = 'auto';
-    vid.muted = true; // Essential for immediate hardware decoder start without browser autoplay restrictions
+    vid.muted = true; // Start muted for reliable zero-latency mobile autoplay
 
-    // Invisible DOM attachment: on Android/Mobile Chrome, detached video elements suffer from macroblock tiling / black bands
+    // Invisible DOM attachment so mobile browsers treat video as an active surface
     vid.style.position = 'fixed';
     vid.style.top = '0';
     vid.style.left = '0';
@@ -60,43 +89,24 @@ export const ScreenMesh: React.FC = () => {
     vid.style.zIndex = '-9999';
     document.body.appendChild(vid);
 
-    const texture = new THREE.VideoTexture(vid);
-    texture.minFilter = THREE.LinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.format = THREE.RGBAFormat;
-    texture.wrapS = THREE.ClampToEdgeWrapping;
-    texture.wrapT = THREE.ClampToEdgeWrapping;
-    texture.generateMipmaps = false;
-    texture.colorSpace = THREE.SRGBColorSpace;
-
     setVideoElement(vid);
-    setVideoTexture(texture);
     useAppStore.getState().setActiveVideoElement(vid);
-
-    let rvfcId: number | null = null;
-    const updateLoop = () => {
-      texture.needsUpdate = true;
-      if ('requestVideoFrameCallback' in vid) {
-        rvfcId = (vid as any).requestVideoFrameCallback(updateLoop);
-      }
-    };
 
     vid.oncanplay = () => {
       setIsVideoReady(true);
-      texture.needsUpdate = true;
-      if ('requestVideoFrameCallback' in vid && rvfcId === null) {
-        rvfcId = (vid as any).requestVideoFrameCallback(updateLoop);
-      }
     };
 
     vid.onloadeddata = () => {
       setIsVideoReady(true);
-      texture.needsUpdate = true;
     };
 
     vid.onloadedmetadata = () => {
       if (vid.duration && !isNaN(vid.duration)) {
         useAppStore.getState().setMovieDuration(vid.duration);
+      }
+      if (vid.videoWidth && vid.videoHeight) {
+        canvas.width = vid.videoWidth;
+        canvas.height = vid.videoHeight;
       }
     };
 
@@ -104,7 +114,7 @@ export const ScreenMesh: React.FC = () => {
       useAppStore.getState().setMovieTime(vid.currentTime);
     };
 
-    vid.onerror = (e) => {
+    vid.onerror = () => {
       console.error('[ScreenMesh] Video element error:', vid.error);
     };
 
@@ -121,20 +131,17 @@ export const ScreenMesh: React.FC = () => {
 
     return () => {
       window.removeEventListener('pointerdown', handleUserInteraction);
-      if (rvfcId !== null && 'cancelVideoFrameCallback' in vid) {
-        (vid as any).cancelVideoFrameCallback(rvfcId);
-      }
       vid.pause();
       vid.src = '';
       if (vid.parentNode) {
         vid.parentNode.removeChild(vid);
       }
-      texture.dispose();
+      canvasTexture.dispose();
       useAppStore.getState().setActiveVideoElement(null);
     };
   }, [currentMovie?.playbackUrl]);
 
-  // Synchronize play / pause from store with intelligent autoplay unlock
+  // Synchronize play / pause with intelligent mobile unlock
   useEffect(() => {
     if (!videoElement) return;
 
@@ -142,10 +149,9 @@ export const ScreenMesh: React.FC = () => {
       const playPromise = videoElement.play();
       if (playPromise !== undefined) {
         playPromise.catch(() => {
-          // Fallback to muted playback if autoplay policy blocks unmuted audio
           videoElement.muted = true;
           videoElement.play().catch((err) => {
-            console.warn('[ScreenMesh] Autoplay blocked, waiting for tap:', err.message);
+            console.warn('[ScreenMesh] Autoplay blocked, waiting for user tap:', err.message);
           });
         });
       }
@@ -154,23 +160,55 @@ export const ScreenMesh: React.FC = () => {
     }
   }, [isPlaying, videoElement]);
 
-  // Synchronize seek from store
+  // Handle incoming remote sync packet (Drift correction & Seek)
   useEffect(() => {
     if (!videoElement || typeof syncState.currentTime !== 'number') return;
-    const diff = Math.abs(videoElement.currentTime - syncState.currentTime);
-    if (diff > 0.8) {
-      videoElement.currentTime = syncState.currentTime;
-    }
-  }, [syncState.currentTime, videoElement]);
 
-  // Update video texture each frame fallback and projector shimmer
+    const latency = Math.max(0, (Date.now() - (syncState.timestamp || Date.now())) / 1000);
+    const targetTime = syncState.currentTime + (syncState.action === 'PLAY' ? latency : 0);
+    const drift = Math.abs(videoElement.currentTime - targetTime);
+
+    // Large drift (or explicit seek): snap immediately
+    if (drift > 1.2) {
+      videoElement.currentTime = targetTime;
+    } else if (drift > 0.25 && syncState.action === 'PLAY') {
+      // Minor drift: smoothly speed up / slow down to seamlessly catch up without audio popping
+      videoElement.playbackRate = videoElement.currentTime < targetTime ? 1.08 : 0.92;
+    } else {
+      videoElement.playbackRate = 1.0;
+    }
+  }, [syncState.currentTime, syncState.action, syncState.timestamp, videoElement]);
+
+  // Frame Render Loop: Draw 2D canvas frame buffer & broadcast host sync heartbeat
   useFrame((state) => {
-    if (!('requestVideoFrameCallback' in (videoElement || {}))) {
-      if (videoTexture && videoElement && videoElement.readyState >= 2 && !videoElement.paused) {
-        videoTexture.needsUpdate = true;
+    const now = performance.now();
+
+    // 1. Host sync heartbeat: broadcast playback time every 2 seconds
+    if (isHost && isPlaying && videoElement && !videoElement.paused) {
+      if (now - lastSyncBroadcastRef.current > 2000) {
+        lastSyncBroadcastRef.current = now;
+        socketService.sendMovieSync('PLAY', videoElement.currentTime, currentMovie?.playbackUrl);
       }
     }
 
+    // 2. Offscreen 2D canvas draw: cleanly renders video frame to texture without macroblock tearing
+    if (videoElement && offscreenCtxRef.current && offscreenCanvasRef.current && screenTexture) {
+      if (videoElement.readyState >= 2 && !videoElement.paused) {
+        const canvas = offscreenCanvasRef.current;
+        const ctx = offscreenCtxRef.current;
+
+        // Auto-match canvas size to video aspect ratio
+        if (videoElement.videoWidth && canvas.width !== videoElement.videoWidth) {
+          canvas.width = videoElement.videoWidth;
+          canvas.height = videoElement.videoHeight;
+        }
+
+        ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        screenTexture.needsUpdate = true;
+      }
+    }
+
+    // 3. Projector atmospheric shimmer
     if (projectorLightRef.current) {
       const flicker = Math.sin(state.clock.getElapsedTime() * 10) * 0.05 + 0.95;
       projectorLightRef.current.intensity = isPlaying ? 2.5 * flicker : 1.2;
@@ -194,8 +232,8 @@ export const ScreenMesh: React.FC = () => {
       {/* Main Cinema Screen Canvas */}
       <mesh ref={screenRef} position={[0, 0, 0.05]}>
         <planeGeometry args={[13.6, 7.6]} />
-        {videoTexture && isVideoReady ? (
-          <meshBasicMaterial map={videoTexture} toneMapped={false} />
+        {screenTexture && isVideoReady ? (
+          <meshBasicMaterial map={screenTexture} toneMapped={false} />
         ) : (
           <meshStandardMaterial
             color="#0d081f"
@@ -208,7 +246,7 @@ export const ScreenMesh: React.FC = () => {
       </mesh>
 
       {/* Standby UI displayed on screen when no movie or video is loading */}
-      {(!videoTexture || !isVideoReady) && (
+      {(!screenTexture || !isVideoReady) && (
         <group position={[0, 0, 0.1]}>
           <Text
             position={[0, 1.2, 0]}

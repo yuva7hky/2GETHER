@@ -9,6 +9,8 @@ import {
   LAMPPOST_POSITIONS,
   PRESSURE_PLATE_POS,
   THEATRE_DOOR_POS,
+  SWING_POS,
+  SWING_SEATS,
 } from '../theatre/OutdoorStreetScene';
 
 interface PlayerControllerProps {
@@ -51,11 +53,13 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
   const setLocalAnimationState = useAppStore((state) => state.setLocalAnimationState);
   const setSitting = useAppStore((state) => state.setSitting);
   const quest = useAppStore((state) => state.quest);
+  const otherPlayer = useAppStore((state) => state.otherPlayer);
 
   // Authoritative initial spawn coordinates from server localPlayer
   const spawnTransform = localPlayer?.transform || { x: -1.5, y: 0, z: 38.0, rotY: Math.PI };
   const pos = useRef(new THREE.Vector3(spawnTransform.x, spawnTransform.y, spawnTransform.z));
   const rotY = useRef<number>(spawnTransform.rotY);
+  const currentVelocity = useRef(new THREE.Vector2(0, 0));
 
   // Quest proximity refs
   const canPickupKeyRef = useRef(false);
@@ -284,51 +288,93 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
   const toggleSit = () => {
     if (isSitting) {
       // Stand up
-      pos.current.z = 1.9;
-      pos.current.y = 0;
+      if (seatIndex === 10 || seatIndex === 11) {
+        // Step forward onto street runway in front of swing
+        pos.current.set(3.4, 0, 32.0);
+        rotY.current = 0;
+      } else {
+        // Stand in cinema aisle
+        pos.current.z = 1.9;
+        pos.current.y = 0;
+      }
       setSitting(false, null);
       setLocalAnimationState('IDLE');
       socketService.sendSitToggle(false, null);
       return;
     }
 
-    // Find nearest seat
-    let nearestSeat: (typeof SEATS)[0] | null = null;
-    let minDistance = 1.6;
-
-    for (const seat of SEATS) {
-      const dist = Math.hypot(pos.current.x - seat.x, pos.current.z - seat.z);
-      if (dist < minDistance) {
-        minDistance = dist;
-        nearestSeat = seat;
+    // 1. Check proximity to 2-Player Romantic Swing on street runway
+    const distToSwing = Math.hypot(pos.current.x - SWING_POS[0], pos.current.z - SWING_POS[2]);
+    if (distToSwing < 2.5) {
+      // Intelligently assign seat: if partner sits on 10, take 11, and vice-versa
+      const partnerSeat = otherPlayer?.isSitting ? otherPlayer.seatIndex : null;
+      let targetSeat = SWING_SEATS[0];
+      if (partnerSeat === 10) {
+        targetSeat = SWING_SEATS[1];
+      } else if (partnerSeat === 11) {
+        targetSeat = SWING_SEATS[0];
+      } else {
+        // Pick whichever seat is closest to player
+        const d0 = Math.hypot(pos.current.x - SWING_SEATS[0].x, pos.current.z - SWING_SEATS[0].z);
+        const d1 = Math.hypot(pos.current.x - SWING_SEATS[1].x, pos.current.z - SWING_SEATS[1].z);
+        targetSeat = d0 <= d1 ? SWING_SEATS[0] : SWING_SEATS[1];
       }
+
+      pos.current.set(targetSeat.x, 0, targetSeat.z);
+      rotY.current = targetSeat.rotY;
+      setSitting(true, targetSeat.seatIndex);
+      setLocalAnimationState('SIT');
+      socketService.sendSitToggle(true, targetSeat.seatIndex);
+      return;
     }
 
-    if (nearestSeat) {
-      // Snap to seat facing cinema screen
-      pos.current.set(nearestSeat.x, 0, nearestSeat.z);
-      rotY.current = Math.PI; // Face forward towards screen
-      setSitting(true, nearestSeat.seatIndex);
-      setLocalAnimationState('SIT');
-      socketService.sendSitToggle(true, nearestSeat.seatIndex);
+    // 2. Cinema seats inside theatre (strictly requires unlocked doors)
+    if (quest.isDoorUnlocked && pos.current.z < 11.0) {
+      let nearestSeat: (typeof SEATS)[0] | null = null;
+      let minDistance = 1.6;
+
+      for (const seat of SEATS) {
+        const dist = Math.hypot(pos.current.x - seat.x, pos.current.z - seat.z);
+        if (dist < minDistance) {
+          minDistance = dist;
+          nearestSeat = seat;
+        }
+      }
+
+      if (nearestSeat) {
+        // Snap to seat facing cinema screen
+        pos.current.set(nearestSeat.x, 0, nearestSeat.z);
+        rotY.current = Math.PI; // Face forward towards screen
+        setSitting(true, nearestSeat.seatIndex);
+        setLocalAnimationState('SIT');
+        socketService.sendSitToggle(true, nearestSeat.seatIndex);
+      }
     }
   };
 
   // Main Movement & Camera Physics Loop
   useFrame((state, delta) => {
     if (!playerRef.current) return;
+    const safeDelta = Math.min(0.05, Math.max(0.001, delta));
 
     // Check proximity to seats for prompt (guarded to prevent 60fps re-render spam)
     let inSeatRange = false;
     let nearestIdx: number | null = null;
 
     if (!isSitting) {
-      for (const seat of SEATS) {
-        const dist = Math.hypot(pos.current.x - seat.x, pos.current.z - seat.z);
-        if (dist < 1.4) {
-          inSeatRange = true;
-          nearestIdx = seat.seatIndex;
-          break;
+      // Check Swing proximity
+      const distToSwing = Math.hypot(pos.current.x - SWING_POS[0], pos.current.z - SWING_POS[2]);
+      if (distToSwing < 2.5) {
+        inSeatRange = true;
+        nearestIdx = 10;
+      } else if (quest.isDoorUnlocked && pos.current.z < 11.0) {
+        for (const seat of SEATS) {
+          const dist = Math.hypot(pos.current.x - seat.x, pos.current.z - seat.z);
+          if (dist < 1.4) {
+            inSeatRange = true;
+            nearestIdx = seat.seatIndex;
+            break;
+          }
         }
       }
 
@@ -377,17 +423,26 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
       onCanSitChanged?.(inSeatRange, nearestIdx);
     }
 
-    // If sitting, lock position and frame cinema view
+    // If sitting, lock position and frame cinema / swing view
     if (isSitting) {
       playerRef.current.position.copy(pos.current);
       playerRef.current.rotation.y = rotY.current;
 
-      // Cinematic couple camera view when sitting
-      const targetCamPos = new THREE.Vector3(0, 2.5, pos.current.z + 4.2);
-      const lookAtPos = new THREE.Vector3(0, 4.6, -9.5); // Cinema screen center
-      const sitLerp = Math.min(1.0, delta * 3.5);
-      camera.position.lerp(targetCamPos, sitLerp);
-      camera.lookAt(lookAtPos);
+      if (seatIndex === 10 || seatIndex === 11) {
+        // Romantic street swing camera view - couple framing
+        const targetCamPos = new THREE.Vector3(1.6, 1.7, 32.0);
+        const lookAtPos = new THREE.Vector3(4.6, 1.35, 32.0);
+        const sitLerp = Math.min(1.0, safeDelta * 3.5);
+        camera.position.lerp(targetCamPos, sitLerp);
+        camera.lookAt(lookAtPos);
+      } else {
+        // Cinematic couple camera view when sitting in theatre
+        const targetCamPos = new THREE.Vector3(0, 2.5, pos.current.z + 4.2);
+        const lookAtPos = new THREE.Vector3(0, 4.6, -9.5); // Cinema screen center
+        const sitLerp = Math.min(1.0, safeDelta * 3.5);
+        camera.position.lerp(targetCamPos, sitLerp);
+        camera.lookAt(lookAtPos);
+      }
       return;
     }
 
@@ -416,16 +471,38 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
     const inputForward = -moveZ;
     const inputRight = moveX;
 
-    const worldMoveX = rightX * inputRight + forwardX * inputForward;
-    const worldMoveZ = rightZ * inputRight + forwardZ * inputForward;
+    const rawWorldX = rightX * inputRight + forwardX * inputForward;
+    const rawWorldZ = rightZ * inputRight + forwardZ * inputForward;
+    const rawMag = Math.hypot(rawWorldX, rawWorldZ);
 
-    const moveMagnitude = Math.hypot(worldMoveX, worldMoveZ);
-    const isMoving = moveMagnitude > 0.05;
     const isRunning =
       keys.current['ShiftLeft'] ||
       keys.current['ShiftRight'] ||
       (mobileRunRef?.current ?? false) ||
       mobileRunPressed;
+
+    let targetSpeed = 0;
+    let dirX = 0;
+    let dirZ = 0;
+
+    if (rawMag > 0.05) {
+      targetSpeed = isRunning ? 5.8 : 3.4;
+      const normalizedMagnitude = Math.min(1.0, rawMag);
+      dirX = (rawWorldX / rawMag) * normalizedMagnitude;
+      dirZ = (rawWorldZ / rawMag) * normalizedMagnitude;
+    }
+
+    // Smooth velocity damping with frame-independent lerp for silky console-grade movement
+    const targetVx = dirX * targetSpeed;
+    const targetVz = dirZ * targetSpeed;
+    const accelRate = targetSpeed > 0 ? 14.0 : 18.0;
+    const velAlpha = 1.0 - Math.exp(-accelRate * safeDelta);
+
+    currentVelocity.current.x = THREE.MathUtils.lerp(currentVelocity.current.x, targetVx, velAlpha);
+    currentVelocity.current.y = THREE.MathUtils.lerp(currentVelocity.current.y, targetVz, velAlpha);
+
+    const currentSpeed = currentVelocity.current.length();
+    const isMoving = currentSpeed > 0.08;
 
     // Jump Physics
     if ((keys.current['Space'] || mobileJumpPressed) && isGrounded.current) {
@@ -434,8 +511,8 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
     }
 
     if (!isGrounded.current) {
-      pos.current.y += jumpVelocity.current * delta;
-      jumpVelocity.current -= 18.0 * delta; // Gravity
+      pos.current.y += jumpVelocity.current * safeDelta;
+      jumpVelocity.current -= 18.0 * safeDelta; // Gravity
       if (pos.current.y <= 0) {
         pos.current.y = 0;
         jumpVelocity.current = 0;
@@ -446,46 +523,45 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
     let currentAnim: CharacterAnimationState = 'IDLE';
 
     if (isMoving) {
-      const speed = isRunning ? 5.8 : 3.4;
-      const normalizedMagnitude = Math.min(1, moveMagnitude);
-      const moveVecX = (worldMoveX / moveMagnitude) * speed * normalizedMagnitude * delta;
-      const moveVecZ = (worldMoveZ / moveMagnitude) * speed * normalizedMagnitude * delta;
+      const prevZ = pos.current.z;
+      pos.current.x += currentVelocity.current.x * safeDelta;
+      pos.current.z += currentVelocity.current.y * safeDelta;
 
-      pos.current.x += moveVecX;
-      pos.current.z += moveVecZ;
-
-      // Smart Zone & Door Collision Clamping
-      const inStreet = pos.current.z >= 11.0;
+      // Smart Zone & IMPENETRABLE Door Barrier Enforcement
       if (!quest.isDoorUnlocked) {
-        // DOORS LOCKED: street vs cinema isolation
-        if (inStreet) {
+        // Locked door! Absolutely impenetrable barrier prevents crossing into cinema
+        if (prevZ >= 11.3) {
           pos.current.x = THREE.MathUtils.clamp(pos.current.x, -6.8, 6.8);
-          pos.current.z = THREE.MathUtils.clamp(pos.current.z, 11.35, 64.0); // Blocked in front of doors, allows full exploration
+          pos.current.z = THREE.MathUtils.clamp(pos.current.z, 11.55, 64.0); // Hard stop in front of doors
         } else {
+          // If already inside
           pos.current.x = THREE.MathUtils.clamp(pos.current.x, -7.8, 7.8);
-          pos.current.z = THREE.MathUtils.clamp(pos.current.z, -7.5, 10.7); // Inside cinema
+          pos.current.z = THREE.MathUtils.clamp(pos.current.z, -7.5, 10.7);
         }
       } else {
-        // DOORS UNLOCKED: doorway corridor at Z in [10.6, 11.4] allows seamless transition
-        if (pos.current.z >= 10.6 && pos.current.z <= 11.4) {
+        // DOORS UNLOCKED: doorway corridor at Z in [10.5, 11.5] allows seamless transition
+        if (pos.current.z >= 10.5 && pos.current.z <= 11.5) {
           pos.current.x = THREE.MathUtils.clamp(pos.current.x, -1.35, 1.35);
-        } else if (pos.current.z > 11.4) {
+        } else if (pos.current.z > 11.5) {
           pos.current.x = THREE.MathUtils.clamp(pos.current.x, -6.8, 6.8);
-          pos.current.z = THREE.MathUtils.clamp(pos.current.z, 10.6, 64.0);
+          pos.current.z = THREE.MathUtils.clamp(pos.current.z, 10.5, 64.0);
         } else {
           pos.current.x = THREE.MathUtils.clamp(pos.current.x, -7.8, 7.8);
-          pos.current.z = THREE.MathUtils.clamp(pos.current.z, -7.5, 11.4);
+          pos.current.z = THREE.MathUtils.clamp(pos.current.z, -7.5, 11.5);
         }
       }
 
-      // Rotate towards movement direction smoothly using shortest angular path (never 360-spin glitch)
-      const targetAngle = Math.atan2(worldMoveX, worldMoveZ);
+      // Rotate towards movement direction smoothly using shortest angular path
+      const targetAngle = Math.atan2(currentVelocity.current.x, currentVelocity.current.y);
       let angleDiff = targetAngle - rotY.current;
       while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
       while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-      rotY.current += angleDiff * Math.min(1.0, delta * 12);
+      const rotAlpha = 1.0 - Math.exp(-14.0 * safeDelta);
+      rotY.current += angleDiff * rotAlpha;
 
-      currentAnim = isRunning ? 'RUN' : 'WALK';
+      currentAnim = currentSpeed > 4.2 ? 'RUN' : 'WALK';
+    } else {
+      currentVelocity.current.set(0, 0);
     }
 
     // Direct 3D mesh update
@@ -504,9 +580,9 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
       pos.current.z + offsetZ
     );
 
-    // Clamped lerpAlpha guarantees no overshooting or oscillating even during mobile frame drops
-    const lerpAlpha = Math.min(1.0, Math.max(0.01, delta * 7));
-    camera.position.lerp(targetCameraPos, lerpAlpha);
+    // Frame-independent smooth damping guarantees buttery smooth follow on mobile
+    const camAlpha = 1.0 - Math.exp(-8.0 * safeDelta);
+    camera.position.lerp(targetCameraPos, camAlpha);
     camera.lookAt(pos.current.x, pos.current.y + 1.25, pos.current.z);
 
     if (localAnimationState !== currentAnim) {
@@ -535,6 +611,7 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
         appearance={profile.appearance}
         animationState={isSitting ? 'SIT' : localAnimationState}
         isSitting={isSitting}
+        seatIndex={seatIndex}
         isLocal={true}
         showNameTag={showNameTags}
       />

@@ -9,7 +9,7 @@ export const RemotePlayer: React.FC = () => {
   const showNameTags = useAppStore((state) => state.settings.showNameTags);
   const groupRef = useRef<THREE.Group>(null);
 
-  const initialTransform = otherPlayer?.transform || { x: 1.5, y: 0, z: 5.0, rotY: Math.PI };
+  const initialTransform = otherPlayer?.transform || { x: 1.5, y: 0, z: 38.0, rotY: Math.PI };
   const currentPos = useRef(new THREE.Vector3(initialTransform.x, initialTransform.y, initialTransform.z));
   const currentRotY = useRef<number>(initialTransform.rotY);
   const initialized = useRef(false);
@@ -29,6 +29,7 @@ export const RemotePlayer: React.FC = () => {
 
   useFrame((state, delta) => {
     if (!otherPlayer || !groupRef.current) return;
+    const safeDelta = Math.min(0.05, Math.max(0.001, delta));
 
     // Smooth network interpolation (LERP)
     const targetPos = new THREE.Vector3(
@@ -43,13 +44,13 @@ export const RemotePlayer: React.FC = () => {
       currentPos.current.copy(targetPos);
       currentRotY.current = otherPlayer.transform.rotY;
     } else {
-      currentPos.current.lerp(targetPos, Math.min(1.0, delta * 14));
+      currentPos.current.lerp(targetPos, Math.min(1.0, safeDelta * 14));
 
       // Handle shortest angle rotation interpolation
       let diff = otherPlayer.transform.rotY - currentRotY.current;
       while (diff < -Math.PI) diff += Math.PI * 2;
       while (diff > Math.PI) diff -= Math.PI * 2;
-      currentRotY.current += diff * Math.min(1.0, delta * 12);
+      currentRotY.current += diff * Math.min(1.0, safeDelta * 12);
     }
 
     groupRef.current.position.copy(currentPos.current);
@@ -65,6 +66,7 @@ export const RemotePlayer: React.FC = () => {
         appearance={otherPlayer.characterData}
         animationState={otherPlayer.animationState}
         isSitting={otherPlayer.isSitting}
+        seatIndex={otherPlayer.seatIndex}
         isLocal={false}
         showNameTag={showNameTags}
       />

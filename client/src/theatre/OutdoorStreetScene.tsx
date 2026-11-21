@@ -25,6 +25,13 @@ export const LAMPPOST_POSITIONS: [number, number, number][] = [
 export const PRESSURE_PLATE_POS: [number, number, number] = [2.4, 0.04, 12.2];
 export const THEATRE_DOOR_POS: [number, number, number] = [0, 0, 11.0];
 
+// Romantic 2-Player Street Swing Position & Seat Offsets
+export const SWING_POS: [number, number, number] = [4.6, 0, 32.0];
+export const SWING_SEATS = [
+  { x: 4.6, y: 0, z: 31.55, seatIndex: 10, rotY: -Math.PI / 2 }, // Swing Left Seat (Boy)
+  { x: 4.6, y: 0, z: 32.45, seatIndex: 11, rotY: -Math.PI / 2 }, // Swing Right Seat (Girl)
+];
+
 interface OutdoorStreetSceneProps {
   canPickupKey?: boolean;
   canUnlockDoor?: boolean;
@@ -47,6 +54,7 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
   const rightDoorRef = useRef<THREE.Group>(null);
   const plateMeshRef = useRef<THREE.Mesh>(null);
   const marqueeSignRef = useRef<THREE.Group>(null);
+  const swingBenchRef = useRef<THREE.Group>(null);
 
   const hasKey = quest.keyPickedBy === localPlayer?.playerId;
   const isPlateActive = quest.isPressurePlateActive;
@@ -97,6 +105,11 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
     // 4. Subtle marquee sign glow shimmer
     if (marqueeSignRef.current) {
       marqueeSignRef.current.rotation.z = Math.sin(t * 1.5) * 0.003;
+    }
+
+    // 5. Romantic 2-Player Street Swing Pendulum Physics
+    if (swingBenchRef.current) {
+      swingBenchRef.current.rotation.z = Math.sin(t * 1.5) * 0.14;
     }
   });
 
@@ -225,34 +238,169 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
 
       {/* Cozy Wooden Park Benches */}
       {[-4.6, 4.6].map((xSide) =>
-        [20, 32, 44, 54].map((zPos, idx) => (
-          <group
-            key={`bench-${xSide}-${idx}`}
-            position={[xSide, 0.12, zPos]}
-            rotation={[0, xSide > 0 ? -Math.PI / 2 : Math.PI / 2, 0]}
-          >
-            {/* Wood Planks Seat */}
-            <mesh position={[0, 0.32, 0]}>
-              <boxGeometry args={[1.8, 0.06, 0.5]} />
-              <primitive object={woodBenchMat} />
-            </mesh>
-            {/* Wood Backrest */}
-            <mesh position={[0, 0.65, -0.22]} rotation={[-0.15, 0, 0]}>
-              <boxGeometry args={[1.8, 0.45, 0.06]} />
-              <primitive object={woodBenchMat} />
-            </mesh>
-            {/* Cast-iron Legs */}
-            <mesh position={[-0.75, 0.18, 0]}>
-              <boxGeometry args={[0.08, 0.36, 0.52]} />
-              <primitive object={ironMat} />
-            </mesh>
-            <mesh position={[0.75, 0.18, 0]}>
-              <boxGeometry args={[0.08, 0.36, 0.52]} />
-              <primitive object={ironMat} />
-            </mesh>
-          </group>
-        ))
+        [20, 32, 44, 54]
+          .filter((zPos) => !(xSide === 4.6 && zPos === 32)) // Replace this spot with Romantic Swing
+          .map((zPos, idx) => (
+            <group
+              key={`bench-${xSide}-${idx}`}
+              position={[xSide, 0.12, zPos]}
+              rotation={[0, xSide > 0 ? -Math.PI / 2 : Math.PI / 2, 0]}
+            >
+              {/* Wood Planks Seat */}
+              <mesh position={[0, 0.32, 0]}>
+                <boxGeometry args={[1.8, 0.06, 0.5]} />
+                <primitive object={woodBenchMat} />
+              </mesh>
+              {/* Wood Backrest */}
+              <mesh position={[0, 0.65, -0.22]} rotation={[-0.15, 0, 0]}>
+                <boxGeometry args={[1.8, 0.45, 0.06]} />
+                <primitive object={woodBenchMat} />
+              </mesh>
+              {/* Cast-iron Legs */}
+              <mesh position={[-0.75, 0.18, 0]}>
+                <boxGeometry args={[0.08, 0.36, 0.52]} />
+                <primitive object={ironMat} />
+              </mesh>
+              <mesh position={[0.75, 0.18, 0]}>
+                <boxGeometry args={[0.08, 0.36, 0.52]} />
+                <primitive object={ironMat} />
+              </mesh>
+            </group>
+          ))
       )}
+
+      {/* ROMANTIC 2-PLAYER STREET SWING (x = 4.6, z = 32.0) */}
+      <group position={[4.6, 0, 32.0]} rotation={[0, -Math.PI / 2, 0]}>
+        {/* Left A-Frame Post */}
+        <group position={[-1.25, 0, 0]}>
+          <mesh position={[0, 1.6, -0.65]} rotation={[-0.38, 0, 0]}>
+            <cylinderGeometry args={[0.07, 0.09, 3.4, 12]} />
+            <meshStandardMaterial color="#3e2723" roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 1.6, 0.65]} rotation={[0.38, 0, 0]}>
+            <cylinderGeometry args={[0.07, 0.09, 3.4, 12]} />
+            <meshStandardMaterial color="#3e2723" roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 1.1, 0]}>
+            <boxGeometry args={[0.08, 0.08, 1.1]} />
+            <meshStandardMaterial color="#3e2723" roughness={0.8} />
+          </mesh>
+          {/* Flower Garland */}
+          <mesh position={[0, 1.8, 0]}>
+            <torusGeometry args={[0.22, 0.05, 8, 16]} />
+            <meshStandardMaterial color="#f472b6" roughness={0.6} />
+          </mesh>
+        </group>
+
+        {/* Right A-Frame Post */}
+        <group position={[1.25, 0, 0]}>
+          <mesh position={[0, 1.6, -0.65]} rotation={[-0.38, 0, 0]}>
+            <cylinderGeometry args={[0.07, 0.09, 3.4, 12]} />
+            <meshStandardMaterial color="#3e2723" roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 1.6, 0.65]} rotation={[0.38, 0, 0]}>
+            <cylinderGeometry args={[0.07, 0.09, 3.4, 12]} />
+            <meshStandardMaterial color="#3e2723" roughness={0.8} />
+          </mesh>
+          <mesh position={[0, 1.1, 0]}>
+            <boxGeometry args={[0.08, 0.08, 1.1]} />
+            <meshStandardMaterial color="#3e2723" roughness={0.8} />
+          </mesh>
+          {/* Flower Garland */}
+          <mesh position={[0, 1.8, 0]}>
+            <torusGeometry args={[0.22, 0.05, 8, 16]} />
+            <meshStandardMaterial color="#f472b6" roughness={0.6} />
+          </mesh>
+        </group>
+
+        {/* Top Heavy Support Beam */}
+        <mesh position={[0, 3.15, 0]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.09, 0.09, 2.8, 12]} />
+          <meshStandardMaterial color="#2d1a10" roughness={0.7} />
+        </mesh>
+        {/* Gold Finials */}
+        <mesh position={[-1.4, 3.15, 0]}>
+          <sphereGeometry args={[0.12, 12, 12]} />
+          <meshStandardMaterial color="#f59e0b" metalness={0.8} roughness={0.2} />
+        </mesh>
+        <mesh position={[1.4, 3.15, 0]}>
+          <sphereGeometry args={[0.12, 12, 12]} />
+          <meshStandardMaterial color="#f59e0b" metalness={0.8} roughness={0.2} />
+        </mesh>
+
+        {/* Twinkling Fairy Lights String */}
+        {[-0.9, -0.45, 0, 0.45, 0.9].map((xOff, i) => (
+          <group key={`fairylight-${i}`} position={[xOff, 3.05, 0]}>
+            <mesh>
+              <sphereGeometry args={[0.04, 8, 8]} />
+              <meshBasicMaterial color={i % 2 === 0 ? '#fef08a' : '#fbcfe8'} />
+            </mesh>
+            <pointLight color="#fef08a" intensity={0.25} distance={2.0} />
+          </group>
+        ))}
+
+        {/* SWINGING BENCH ASSEMBLY (Animated pendulum sway) */}
+        <group ref={swingBenchRef} position={[0, 3.1, 0]}>
+          {/* Left Hanging Chain */}
+          <mesh position={[-0.85, -1.2, 0]}>
+            <cylinderGeometry args={[0.015, 0.015, 2.4, 8]} />
+            <meshStandardMaterial color="#d97706" metalness={0.8} roughness={0.3} />
+          </mesh>
+          {/* Right Hanging Chain */}
+          <mesh position={[0.85, -1.2, 0]}>
+            <cylinderGeometry args={[0.015, 0.015, 2.4, 8]} />
+            <meshStandardMaterial color="#d97706" metalness={0.8} roughness={0.3} />
+          </mesh>
+
+          {/* Suspended Wooden Bench Unit */}
+          <group position={[0, -2.4, 0]}>
+            {/* Wooden Bench Base Frame */}
+            <mesh position={[0, 0.06, 0]}>
+              <boxGeometry args={[1.85, 0.08, 0.68]} />
+              <meshStandardMaterial color="#451a03" roughness={0.7} />
+            </mesh>
+            {/* Plush Couple Velvet Cushion */}
+            <mesh position={[0, 0.14, 0.02]}>
+              <boxGeometry args={[1.75, 0.1, 0.62]} />
+              <meshStandardMaterial color="#be123c" roughness={0.6} />
+            </mesh>
+            {/* Wooden Slatted Backrest */}
+            <mesh position={[0, 0.52, -0.32]} rotation={[-0.12, 0, 0]}>
+              <boxGeometry args={[1.75, 0.72, 0.06]} />
+              <meshStandardMaterial color="#451a03" roughness={0.7} />
+            </mesh>
+            {/* Wooden Armrests */}
+            <mesh position={[-0.88, 0.32, 0.02]}>
+              <boxGeometry args={[0.08, 0.36, 0.6]} />
+              <meshStandardMaterial color="#451a03" roughness={0.7} />
+            </mesh>
+            <mesh position={[0.88, 0.32, 0.02]}>
+              <boxGeometry args={[0.08, 0.36, 0.6]} />
+              <meshStandardMaterial color="#451a03" roughness={0.7} />
+            </mesh>
+            {/* Golden Carved Heart in the center */}
+            <group position={[0, 0.62, -0.28]}>
+              <Text fontSize={0.22} color="#f59e0b" anchorX="center" anchorY="middle">
+                ♥
+              </Text>
+            </group>
+          </group>
+        </group>
+
+        {/* Floating Proximity Tag for Swing */}
+        <group position={[0, 1.4, 0.8]}>
+          <Text
+            fontSize={0.16}
+            color="#fbcfe8"
+            outlineWidth={0.02}
+            outlineColor="#3b0764"
+            anchorX="center"
+            anchorY="middle"
+          >
+            🌸 Romantic Street Swing
+          </Text>
+        </group>
+      </group>
 
       {/* Romantic Leafy Shade Trees */}
       {[-7.8, 7.8].map((xSide) =>
