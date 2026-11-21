@@ -67,6 +67,7 @@ export const ScreenMesh: React.FC = () => {
     canvasTexture.magFilter = THREE.LinearFilter;
     canvasTexture.generateMipmaps = false;
     canvasTexture.colorSpace = THREE.SRGBColorSpace;
+    canvasTexture.unpackAlignment = 1;
     setScreenTexture(canvasTexture);
 
     // 2. Video element
@@ -108,19 +109,6 @@ export const ScreenMesh: React.FC = () => {
       if (vid.duration && !isNaN(vid.duration)) {
         useAppStore.getState().setMovieDuration(vid.duration);
       }
-      // Macroblock-aligned multiple-of-16 resolution cap for optimal mobile memory bandwidth
-      const isMobile = typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0);
-      const maxDim = isMobile ? 960 : 1280;
-      let w = vid.videoWidth || 1280;
-      let h = vid.videoHeight || 720;
-      if (w > maxDim) {
-        h = Math.round((h * maxDim) / w);
-        w = maxDim;
-      }
-      w = Math.max(16, Math.floor(w / 16) * 16);
-      h = Math.max(16, Math.floor(h / 16) * 16);
-      canvas.width = w;
-      canvas.height = h;
     };
 
     vid.ontimeupdate = () => {
@@ -204,7 +192,7 @@ export const ScreenMesh: React.FC = () => {
       }
     }
 
-    // 2. Offscreen 2D canvas draw: throttled to actual video playback frames (Zero CPU/GPU waste, zero tearing)
+    // 2. Offscreen 2D canvas draw: fixed-resolution letterboxed rendering (Zero stride mismatch, zero tearing, zero black bands)
     if (videoElement && offscreenCtxRef.current && offscreenCanvasRef.current && screenTexture) {
       if (videoElement.readyState >= 2 && !videoElement.paused) {
         const currTime = videoElement.currentTime;
@@ -213,7 +201,33 @@ export const ScreenMesh: React.FC = () => {
           lastVideoTimeRef.current = currTime;
           const canvas = offscreenCanvasRef.current;
           const ctx = offscreenCtxRef.current;
-          ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+          const vw = videoElement.videoWidth || 1280;
+          const vh = videoElement.videoHeight || 720;
+          const videoAspect = vw / vh;
+          const canvasAspect = 1280 / 720; // 1.7777...
+
+          let drawW = 1280;
+          let drawH = 720;
+          let drawX = 0;
+          let drawY = 0;
+
+          if (videoAspect > canvasAspect) {
+            // Wider than 16:9 (e.g. 21:9 cinemascope) -> letterbox top & bottom
+            drawH = Math.round(1280 / videoAspect);
+            drawY = Math.round((720 - drawH) / 2);
+          } else if (videoAspect < canvasAspect) {
+            // Taller than 16:9 (e.g. 4:3 or phone portrait 9:16) -> pillarbox left & right
+            drawW = Math.round(720 * videoAspect);
+            drawX = Math.round((1280 - drawW) / 2);
+          }
+
+          // Clear margin areas with clean cinema black
+          ctx.fillStyle = '#0a0515';
+          ctx.fillRect(0, 0, 1280, 720);
+
+          // Draw video cleanly centered without any stride or aspect ratio distortion
+          ctx.drawImage(videoElement, drawX, drawY, drawW, drawH);
           screenTexture.needsUpdate = true;
         }
       }
