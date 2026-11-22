@@ -143,8 +143,9 @@ export const VirtualTheatre: React.FC = () => {
     <div className="relative w-screen h-screen overflow-hidden bg-theatre-darkest select-none touch-none">
       {/* 1. TOP FLOATING HUD */}
       <header className="absolute top-4 inset-x-4 z-40 flex items-center justify-between pointer-events-none">
-        {/* Left: Couple Avatars + Brand & Room Status */}
-        <div className="flex items-center gap-2.5 pointer-events-auto">
+        {/* Left: Couple Avatars + Brand & Room Status (Hidden while seated) */}
+        {!isSitting && (
+          <div className="flex items-center gap-2.5 pointer-events-auto">
           {/* Couple Avatar Circles (Image 1 & 2) */}
           <div className="glass-panel px-2.5 py-1.5 rounded-full flex items-center gap-1.5 shadow-glass border border-white/15 bg-slate-900/60 backdrop-blur-md">
             {/* Boy Avatar Circle */}
@@ -248,8 +249,9 @@ export const VirtualTheatre: React.FC = () => {
             />
           </div>
         </div>
+        )}
 
-        {/* Right: Controls & Actions */}
+        {/* Right: Controls & Actions (Stream/Upload, Mic, and Message remain visible while seated) */}
         <div className="flex items-center gap-2.5 pointer-events-auto">
           {/* Movie Projector Button */}
           <button
@@ -285,23 +287,26 @@ export const VirtualTheatre: React.FC = () => {
             )}
           </button>
 
-          {/* Settings */}
-          <button
-            onClick={() => setIsSettingsOpen(true)}
-            className="p-2.5 rounded-2xl glass-panel hover:bg-white/15 transition text-slate-300 hover:text-white border border-white/10"
-            title="Settings"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
+          {/* Settings & Leave Cinema (Hidden while sitting to keep screen 100% clean) */}
+          {!isSitting && (
+            <>
+              <button
+                onClick={() => setIsSettingsOpen(true)}
+                className="p-2.5 rounded-2xl glass-panel hover:bg-white/15 transition text-slate-300 hover:text-white border border-white/10"
+                title="Settings"
+              >
+                <Settings className="w-5 h-5" />
+              </button>
 
-          {/* Leave Theatre Button */}
-          <button
-            onClick={handleLeaveTheatre}
-            className="p-2.5 rounded-2xl glass-panel hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 transition border border-white/10"
-            title="Leave Cinema"
-          >
-            <LogOut className="w-5 h-5" />
-          </button>
+              <button
+                onClick={handleLeaveTheatre}
+                className="p-2.5 rounded-2xl glass-panel hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 transition border border-white/10"
+                title="Leave Cinema"
+              >
+                <LogOut className="w-5 h-5" />
+              </button>
+            </>
+          )}
         </div>
       </header>
 
@@ -452,6 +457,11 @@ export const VirtualTheatre: React.FC = () => {
             setTimeout(() => setMobileSitTrigger(false), 150);
           }}
           isSitting={isSitting}
+          seatIndex={seatIndex}
+          onSeesawPush={(dir) => {
+            const target = seatIndex === 20 ? (dir === 'UP' ? 0.22 : -0.22) : (dir === 'UP' ? -0.22 : 0.22);
+            socketService.sendSeesawPush(target);
+          }}
           canPickupKey={canPickupKey}
           canUnlockDoor={canUnlockDoor}
           onPickupKey={() => {

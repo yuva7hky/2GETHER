@@ -128,6 +128,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
 
     if (isSitting) {
       const isSwing = seatIndex === 10 || seatIndex === 11;
+      const isSeeSaw = seatIndex === 20 || seatIndex === 21;
 
       // Sitting posture cleanly resting on seat / cushion
       if (bodyRef.current) {
@@ -149,12 +150,12 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
         rightLegRef.current.position.set(0.18, 0.45, 0.25);
       }
       if (leftArmRef.current) {
-        // Holding onto swing chain / side
-        leftArmRef.current.rotation.x = -Math.PI / 5;
+        // Holding onto swing chain / see-saw handlebar
+        leftArmRef.current.rotation.x = isSeeSaw ? -Math.PI / 3.5 : -Math.PI / 5;
         leftArmRef.current.position.set(-0.36, 0.65, 0.15);
       }
       if (rightArmRef.current) {
-        rightArmRef.current.rotation.x = -Math.PI / 5;
+        rightArmRef.current.rotation.x = isSeeSaw ? -Math.PI / 3.5 : -Math.PI / 5;
         rightArmRef.current.position.set(0.36, 0.65, 0.15);
       }
       return;
@@ -543,8 +544,8 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
               </mesh>
             </group>
 
-            {/* PLEATED PASTEL SKIRT (Adjusted height when seated on swing to prevent clipping cushion) */}
-            <group position={[0, isSitting && (seatIndex === 10 || seatIndex === 11) ? -0.22 : -0.32, 0]}>
+            {/* PLEATED PASTEL SKIRT (Adjusted height when seated on swing or see-saw to prevent clipping cushion) */}
+            <group position={[0, isSitting && (seatIndex === 10 || seatIndex === 11 || seatIndex === 20 || seatIndex === 21) ? -0.22 : -0.32, 0]}>
               <mesh material={skirtPlaidMat}>
                 <cylinderGeometry args={[0.29, 0.39, 0.18, 32]} />
               </mesh>

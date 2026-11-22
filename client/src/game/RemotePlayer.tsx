@@ -3,12 +3,14 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { useAppStore } from '../store/useAppStore';
 import { StylizedAvatar } from '../characters/StylizedAvatar';
-import { getSwingSeatTransform } from '../theatre/OutdoorStreetScene';
+import { getSwingSeatTransform, getSeesawSeatTransform } from '../theatre/OutdoorStreetScene';
 
 const TEMP_REMOTE_TARGET = new THREE.Vector3();
 
 export const RemotePlayer: React.FC = () => {
   const otherPlayer = useAppStore((state) => state.otherPlayer);
+  const seesawTargetAngle = useAppStore((state) => state.seesawTargetAngle);
+  const seesawCurrentAngleRef = useRef<number>(0.18);
   const showNameTags = useAppStore((state) => state.settings.showNameTags);
   const groupRef = useRef<THREE.Group>(null);
 
@@ -43,6 +45,22 @@ export const RemotePlayer: React.FC = () => {
       groupRef.current.position.copy(currentPos.current);
       groupRef.current.rotation.order = 'YXZ';
       groupRef.current.rotation.set(swingTransform.tiltX, swingTransform.rotY, 0);
+      return;
+    }
+
+    // Dynamic See-Saw Motion for remote partner
+    if (otherPlayer.isSitting && (otherPlayer.seatIndex === 20 || otherPlayer.seatIndex === 21)) {
+      seesawCurrentAngleRef.current = THREE.MathUtils.lerp(
+        seesawCurrentAngleRef.current,
+        seesawTargetAngle,
+        safeDelta * 7
+      );
+      const seesawTransform = getSeesawSeatTransform(otherPlayer.seatIndex, seesawCurrentAngleRef.current);
+      currentPos.current.set(seesawTransform.x, seesawTransform.y, seesawTransform.z);
+      currentRotY.current = seesawTransform.rotY;
+      groupRef.current.position.copy(currentPos.current);
+      groupRef.current.rotation.order = 'YXZ';
+      groupRef.current.rotation.set(seesawTransform.tiltX, seesawTransform.rotY, 0);
       return;
     }
 

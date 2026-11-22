@@ -32,6 +32,40 @@ export const SWING_SEATS = [
   { x: 4.6, y: 0.61, z: 32.42, seatIndex: 11, rotY: -Math.PI / 2 }, // Swing Right Seat (Girl)
 ];
 
+// 2-Player Interactive Street See-Saw Position & Transform Helper
+export const SEESAW_POS: [number, number, number] = [-4.6, 0, 32.0];
+export const SEESAW_SEATS = [
+  { x: -4.6, y: 0.55, z: 30.7, seatIndex: 20, rotY: 0 }, // North Seat (Faces South)
+  { x: -4.6, y: 0.55, z: 33.3, seatIndex: 21, rotY: Math.PI }, // South Seat (Faces North)
+];
+
+export function getSeesawSeatTransform(seatIndex: number, angle: number) {
+  // Fulcrum is at [-4.6, 0.48, 32.0]
+  // Plank rotates around X-axis by angle (-0.22 to +0.22 rad)
+  const isSeat20 = seatIndex === 20; // North seat
+  const armLength = isSeat20 ? -1.3 : 1.3;
+  const seatHeight = 0.08;
+
+  // Rotation in Y-Z plane around X-axis
+  const yRel = seatHeight;
+  const zRel = armLength;
+
+  const yRot = yRel * Math.cos(angle) - zRel * Math.sin(angle);
+  const zRot = yRel * Math.sin(angle) + zRel * Math.cos(angle);
+
+  const worldX = -4.6;
+  const worldY = 0.48 + yRot;
+  const worldZ = 32.0 + zRot;
+
+  return {
+    x: worldX,
+    y: worldY,
+    z: worldZ,
+    rotY: isSeat20 ? 0 : Math.PI,
+    tiltX: angle,
+  };
+}
+
 export function getSwingSeatTransform(seatIndex: number, time: number) {
   const theta = Math.sin(time * 1.5) * 0.16;
   const lx = seatIndex === 11 || seatIndex === 1 ? 0.42 : -0.42;
@@ -65,6 +99,8 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
 }) => {
   const quest = useAppStore((state) => state.quest);
   const localPlayer = useAppStore((state) => state.localPlayer);
+  const otherPlayer = useAppStore((state) => state.otherPlayer);
+  const seesawTargetAngle = useAppStore((state) => state.seesawTargetAngle);
 
   const keyMeshRef = useRef<THREE.Group>(null);
   const keyRingRef = useRef<THREE.Mesh>(null);
@@ -73,10 +109,22 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
   const plateMeshRef = useRef<THREE.Mesh>(null);
   const marqueeSignRef = useRef<THREE.Group>(null);
   const swingBenchRef = useRef<THREE.Group>(null);
+  const seesawPlankRef = useRef<THREE.Group>(null);
+  const seesawCurrentAngleRef = useRef<number>(0.18);
 
   const hasKey = quest.keyPickedBy === localPlayer?.playerId;
   const isPlateActive = quest.isPressurePlateActive;
   const isDoorUnlocked = quest.isDoorUnlocked;
+
+  const isAnyOnSwing = Boolean(
+    (localPlayer?.isSitting && (localPlayer?.seatIndex === 10 || localPlayer?.seatIndex === 11)) ||
+    (otherPlayer?.isSitting && (otherPlayer?.seatIndex === 10 || otherPlayer?.seatIndex === 11))
+  );
+
+  const isAnyOnSeesaw = Boolean(
+    (localPlayer?.isSitting && (localPlayer?.seatIndex === 20 || localPlayer?.seatIndex === 21)) ||
+    (otherPlayer?.isSitting && (otherPlayer?.seatIndex === 20 || otherPlayer?.seatIndex === 21))
+  );
 
   // Frame animation loop
   useFrame((state, delta) => {
@@ -128,6 +176,17 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
     // 5. Romantic 2-Player Street Swing Pendulum Physics (swings along local Z)
     if (swingBenchRef.current) {
       swingBenchRef.current.rotation.x = Math.sin(t * 1.5) * 0.16;
+    }
+
+    // 6. 2-Player Street See-Saw Dynamic Tilting Physics
+    const safeDelta = Math.min(0.05, Math.max(0.001, delta));
+    seesawCurrentAngleRef.current = THREE.MathUtils.lerp(
+      seesawCurrentAngleRef.current,
+      seesawTargetAngle,
+      safeDelta * 7
+    );
+    if (seesawPlankRef.current) {
+      seesawPlankRef.current.rotation.x = seesawCurrentAngleRef.current;
     }
   });
 
@@ -257,7 +316,7 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
       {/* Cozy Wooden Park Benches */}
       {[-4.6, 4.6].map((xSide) =>
         [20, 32, 44, 54]
-          .filter((zPos) => !(xSide === 4.6 && zPos === 32)) // Replace this spot with Romantic Swing
+          .filter((zPos) => !(xSide === 4.6 && zPos === 32) && !(xSide === -4.6 && zPos === 32)) // 4.6 is Swing, -4.6 is See-Saw
           .map((zPos, idx) => (
             <group
               key={`bench-${xSide}-${idx}`}
@@ -403,19 +462,102 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
           </group>
         </group>
 
-        {/* Floating Proximity Tag for Swing */}
-        <group position={[0, 1.4, 0.8]}>
-          <Text
-            fontSize={0.16}
-            color="#fbcfe8"
-            outlineWidth={0.02}
-            outlineColor="#3b0764"
-            anchorX="center"
-            anchorY="middle"
-          >
-            🌸 Romantic Street Swing
-          </Text>
+        {/* Floating Proximity Tag for Swing (Hidden when characters are seated) */}
+        {!isAnyOnSwing && (
+          <group position={[0, 1.4, 0.8]}>
+            <Text
+              fontSize={0.16}
+              color="#fbcfe8"
+              outlineWidth={0.02}
+              outlineColor="#3b0764"
+              anchorX="center"
+              anchorY="middle"
+            >
+              🌸 Street Swing
+            </Text>
+          </group>
+        )}
+      </group>
+
+      {/* =========================================================================
+          2-PLAYER INTERACTIVE STREET SEE-SAW (x = -4.6, z = 32.0)
+         ========================================================================= */}
+      <group position={[-4.6, 0, 32.0]}>
+        {/* Triangular A-Frame Fulcrum Base */}
+        <mesh position={[0, 0.24, 0]}>
+          <cylinderGeometry args={[0.08, 0.35, 0.48, 4]} />
+          <meshStandardMaterial color="#475569" metalness={0.7} roughness={0.3} />
+        </mesh>
+        {/* Center Pivot Axle */}
+        <mesh position={[0, 0.46, 0]} rotation={[0, 0, Math.PI / 2]}>
+          <cylinderGeometry args={[0.05, 0.05, 0.55, 16]} />
+          <meshStandardMaterial color="#f59e0b" metalness={0.8} roughness={0.2} />
+        </mesh>
+
+        {/* Animated Tilting Plank Assembly */}
+        <group ref={seesawPlankRef} position={[0, 0.48, 0]}>
+          {/* Main Wooden Plank (3.2m long along Z) */}
+          <mesh position={[0, 0, 0]}>
+            <boxGeometry args={[0.42, 0.08, 3.2]} />
+            <meshStandardMaterial color="#b45309" roughness={0.6} />
+          </mesh>
+
+          {/* North Seat Cushion (Seat 20 - z = -1.3, Pink) */}
+          <mesh position={[0, 0.06, -1.3]}>
+            <boxGeometry args={[0.38, 0.06, 0.45]} />
+            <meshStandardMaterial color="#ec4899" roughness={0.5} />
+          </mesh>
+          {/* North Handlebar Post & Grip */}
+          <mesh position={[0, 0.18, -1.05]}>
+            <cylinderGeometry args={[0.02, 0.02, 0.24, 8]} />
+            <meshStandardMaterial color="#fbbf24" metalness={0.8} roughness={0.2} />
+          </mesh>
+          <mesh position={[0, 0.28, -1.05]} rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.02, 0.02, 0.3, 8]} />
+            <meshStandardMaterial color="#fbbf24" metalness={0.8} roughness={0.2} />
+          </mesh>
+
+          {/* South Seat Cushion (Seat 21 - z = 1.3, Sky Blue) */}
+          <mesh position={[0, 0.06, 1.3]}>
+            <boxGeometry args={[0.38, 0.06, 0.45]} />
+            <meshStandardMaterial color="#38bdf8" roughness={0.5} />
+          </mesh>
+          {/* South Handlebar Post & Grip */}
+          <mesh position={[0, 0.18, 1.05]}>
+            <cylinderGeometry args={[0.02, 0.02, 0.24, 8]} />
+            <meshStandardMaterial color="#fbbf24" metalness={0.8} roughness={0.2} />
+          </mesh>
+          <mesh position={[0, 0.28, 1.05]} rotation={[0, 0, Math.PI / 2]}>
+            <cylinderGeometry args={[0.02, 0.02, 0.3, 8]} />
+            <meshStandardMaterial color="#fbbf24" metalness={0.8} roughness={0.2} />
+          </mesh>
+
+          {/* Rubber Ground Dampers */}
+          <mesh position={[0, -0.06, -1.45]}>
+            <cylinderGeometry args={[0.04, 0.04, 0.08, 8]} />
+            <meshStandardMaterial color="#0f172a" />
+          </mesh>
+          <mesh position={[0, -0.06, 1.45]}>
+            <cylinderGeometry args={[0.04, 0.04, 0.08, 8]} />
+            <meshStandardMaterial color="#0f172a" />
+          </mesh>
         </group>
+
+        {/* Floating Proximity Tag for See-Saw */}
+        {!isAnyOnSeesaw && (
+          <group position={[0, 1.3, 0]}>
+            <Text
+              fontSize={0.16}
+              color="#fef08a"
+              outlineWidth={0.02}
+              outlineColor="#78350f"
+              anchorX="center"
+              anchorY="middle"
+            >
+              🎠 Street See-Saw
+            </Text>
+          </group>
+        )}
       </group>
 
       {/* Romantic Leafy Shade Trees */}

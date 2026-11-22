@@ -188,6 +188,13 @@ export function setupSocketHandler(io: Server): void {
       }
     });
 
+    // 6.5 STREET SEE-SAW REAL-TIME SYNC
+    socket.on('theatre:seesaw', (data: { angle: number }) => {
+      const session = roomService.getSessionBySocket(socket.id);
+      if (!session) return;
+      socket.to(session.roomCode).emit('theatre:seesaw_update', data);
+    });
+
     // 7. SYNCHRONIZED MOVIE PLAYBACK & SELECTION
     socket.on('movie:sync', (syncData: MovieSyncState) => {
       const roomCode = roomService.getRoomCodeBySocket(socket.id);

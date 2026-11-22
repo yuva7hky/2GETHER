@@ -22,8 +22,10 @@ export const QuestBanner: React.FC<QuestBannerProps> = ({
   const uploadState = useAppStore((state) => state.uploadState);
   const isHost = useAppStore((state) => state.isHost);
   const localPlayer = useAppStore((state) => state.localPlayer);
+  const isSitting = useAppStore((state) => state.isSitting);
 
   const [isMinimized, setIsMinimized] = useState(false);
+  const [isDoorUnlockedDismissed, setIsDoorUnlockedDismissed] = useState(false);
 
   const hasKey = quest.keyPickedBy === localPlayer?.playerId;
   const isDoorOpen = quest.isDoorUnlocked;
@@ -39,7 +41,22 @@ export const QuestBanner: React.FC<QuestBannerProps> = ({
     return () => clearTimeout(timer);
   }, [quest.isDoorUnlocked, quest.keyPickedBy, quest.isPressurePlateActive]);
 
-  // If doors are open and movie is playing or sitting, keep banner hidden
+  // When doors are unlocked, automatically dismiss and remove the banner after 5 seconds
+  useEffect(() => {
+    if (isDoorOpen) {
+      const timer = setTimeout(() => {
+        setIsDoorUnlockedDismissed(true);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [isDoorOpen]);
+
+  // If doors are open and dismissed or if player is seated, remove banner completely to keep screen clean
+  if (isDoorOpen && (isDoorUnlockedDismissed || isSitting) && !uploadState.isUploading) {
+    return null;
+  }
+
+  // If doors are open and movie is loaded, keep banner hidden
   if (isDoorOpen && currentMovie && !uploadState.isUploading) {
     return null;
   }

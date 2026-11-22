@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { ArrowUp, Armchair, Key, DoorOpen, Zap } from 'lucide-react';
+import { ArrowUp, ArrowDown, Armchair, Key, DoorOpen, Zap } from 'lucide-react';
 
 interface MobileControlsProps {
   onVectorChange: (vec: { x: number; y: number }) => void;
@@ -7,6 +7,8 @@ interface MobileControlsProps {
   onJumpTrigger: () => void;
   onSitTrigger: () => void;
   isSitting?: boolean;
+  seatIndex?: number | null;
+  onSeesawPush?: (direction: 'UP' | 'DOWN') => void;
   canPickupKey?: boolean;
   canUnlockDoor?: boolean;
   onPickupKey?: () => void;
@@ -19,6 +21,8 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
   onJumpTrigger,
   onSitTrigger,
   isSitting = false,
+  seatIndex = null,
+  onSeesawPush,
   canPickupKey = false,
   canUnlockDoor = false,
   onPickupKey,
@@ -127,38 +131,61 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
       data-no-cam="true"
       className="absolute inset-x-0 bottom-4 pointer-events-none z-30 flex justify-between items-end px-5 pb-1 select-none"
     >
-      {/* 1. VIRTUAL TOUCH JOYSTICK (BOTTOM-LEFT) */}
-      <div
-        ref={joystickBaseRef}
-        data-no-cam="true"
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={handleTouchEnd}
-        className="w-28 h-28 rounded-full bg-theatre-darkest/75 border-2 border-theatre-pink/40 backdrop-blur-md relative flex items-center justify-center pointer-events-auto touch-none shadow-glow-pink"
-      >
-        {/* Directional Accent Dots */}
-        <div className="absolute top-2 w-1.5 h-1.5 rounded-full bg-white/30" />
-        <div className="absolute bottom-2 w-1.5 h-1.5 rounded-full bg-white/30" />
-        <div className="absolute left-2 w-1.5 h-1.5 rounded-full bg-white/30" />
-        <div className="absolute right-2 w-1.5 h-1.5 rounded-full bg-white/30" />
-
-        {/* Center Target Indicator */}
-        <div className="absolute w-8 h-8 rounded-full border border-dashed border-white/20 pointer-events-none" />
-
-        {/* Dynamic Glowing Joystick Knob */}
+      {/* 1. BOTTOM-LEFT: JOYSTICK (WHEN STANDING) OR SEE-SAW DOWN BUTTON (WHEN SEATED ON SEE-SAW) */}
+      {!isSitting ? (
         <div
-          ref={joystickKnobRef}
-          className="w-12 h-12 rounded-full bg-gradient-to-tr from-theatre-pink via-rose-500 to-theatre-gold shadow-lg flex items-center justify-center pointer-events-none transition-transform duration-75"
+          ref={joystickBaseRef}
+          data-no-cam="true"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onTouchCancel={handleTouchEnd}
+          className="w-28 h-28 rounded-full bg-theatre-darkest/75 border-2 border-theatre-pink/40 backdrop-blur-md relative flex items-center justify-center pointer-events-auto touch-none shadow-glow-pink"
         >
-          <div className="w-4 h-4 rounded-full bg-white/80 shadow-sm" />
+          {/* Directional Accent Dots */}
+          <div className="absolute top-2 w-1.5 h-1.5 rounded-full bg-white/30" />
+          <div className="absolute bottom-2 w-1.5 h-1.5 rounded-full bg-white/30" />
+          <div className="absolute left-2 w-1.5 h-1.5 rounded-full bg-white/30" />
+          <div className="absolute right-2 w-1.5 h-1.5 rounded-full bg-white/30" />
+
+          {/* Center Target Indicator */}
+          <div className="absolute w-8 h-8 rounded-full border border-dashed border-white/20 pointer-events-none" />
+
+          {/* Dynamic Glowing Joystick Knob */}
+          <div
+            ref={joystickKnobRef}
+            className="w-12 h-12 rounded-full bg-gradient-to-tr from-theatre-pink via-rose-500 to-theatre-gold shadow-lg flex items-center justify-center pointer-events-none transition-transform duration-75"
+          >
+            <div className="w-4 h-4 rounded-full bg-white/80 shadow-sm" />
+          </div>
         </div>
-      </div>
+      ) : (seatIndex === 20 || seatIndex === 21) ? (
+        /* See-Saw DOWN Button on Bottom-Left */
+        <div data-no-cam="true" className="pointer-events-auto">
+          <button
+            type="button"
+            onTouchStart={(e) => {
+              e.stopPropagation();
+              hapticFeedback();
+              onSeesawPush?.('DOWN');
+            }}
+            onClick={() => {
+              hapticFeedback();
+              onSeesawPush?.('DOWN');
+            }}
+            className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-amber-500 via-orange-500 to-amber-600 border-2 border-amber-300 text-white font-black flex flex-col items-center justify-center shadow-lg active:scale-90 transition-transform shadow-[0_0_15px_rgba(245,158,11,0.5)]"
+            title="Push Down"
+          >
+            <ArrowDown className="w-7 h-7 stroke-[3]" />
+            <span className="text-[10px] font-black tracking-wider mt-0.5">DOWN</span>
+          </button>
+        </div>
+      ) : null}
 
       {/* 2. ERGONOMIC ACTION BUTTONS CLUSTER (BOTTOM-RIGHT) */}
       <div data-no-cam="true" className="flex flex-col gap-2.5 pointer-events-auto items-end pb-1">
         {/* Contextual Quest Key Pickup Button */}
-        {canPickupKey && (
+        {!isSitting && canPickupKey && (
           <button
             type="button"
             onTouchStart={(e) => {
@@ -175,7 +202,7 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
         )}
 
         {/* Contextual Quest Unlock Door Button */}
-        {canUnlockDoor && (
+        {!isSitting && canUnlockDoor && (
           <button
             type="button"
             onTouchStart={(e) => {
@@ -191,63 +218,116 @@ export const MobileControls: React.FC<MobileControlsProps> = ({
           </button>
         )}
 
-        {/* Horizontal Action Row: Sit, Sprint, Jump */}
-        <div className="flex items-center gap-2.5">
-          {/* Sit / Stand Button */}
-          <button
-            type="button"
-            onTouchStart={(e) => {
-              e.stopPropagation();
-              handleSit();
-            }}
-            onClick={handleSit}
-            className={`w-13 h-13 p-3 rounded-2xl flex flex-col items-center justify-center backdrop-blur-md border text-white transition-all active:scale-95 shadow-lg ${isSitting
-                ? 'bg-theatre-pink border-theatre-gold shadow-glow-pink'
-                : 'bg-theatre-surface/85 border-white/20'
-              }`}
-            title={isSitting ? 'Stand Up' : 'Sit Down'}
-          >
-            <Armchair className="w-5 h-5" />
-            <span className="text-[9px] font-bold mt-0.5 tracking-tight">
-              {isSitting ? 'STAND' : 'SIT'}
-            </span>
-          </button>
+        {/* Action Row */}
+        {isSitting ? (
+          (seatIndex === 20 || seatIndex === 21) ? (
+            /* See-Saw Controls: UP button & STAND button */
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  hapticFeedback();
+                  onSeesawPush?.('UP');
+                }}
+                onClick={() => {
+                  hapticFeedback();
+                  onSeesawPush?.('UP');
+                }}
+                className="w-16 h-16 rounded-3xl bg-gradient-to-tr from-sky-400 via-blue-500 to-indigo-600 border-2 border-sky-300 text-white font-black flex flex-col items-center justify-center shadow-lg active:scale-90 transition-transform shadow-[0_0_15px_rgba(56,189,248,0.5)]"
+                title="Push Up"
+              >
+                <ArrowUp className="w-7 h-7 stroke-[3]" />
+                <span className="text-[10px] font-black tracking-wider mt-0.5">UP</span>
+              </button>
 
-          {/* Run / Sprint Button */}
-          <button
-            type="button"
-            onTouchStart={(e) => {
-              e.stopPropagation();
-              toggleRun();
-            }}
-            onClick={toggleRun}
-            className={`w-13 h-13 p-3 rounded-2xl flex flex-col items-center justify-center backdrop-blur-md border transition-all active:scale-95 shadow-lg ${isRunning
-                ? 'bg-theatre-gold border-amber-300 text-theatre-darkest shadow-glow-gold'
-                : 'bg-theatre-surface/85 border-white/20 text-white'
-              }`}
-            title="Toggle Sprint"
-          >
-            <Zap className={`w-5 h-5 ${isRunning ? 'fill-current' : ''}`} />
-            <span className="text-[9px] font-bold mt-0.5 tracking-tight">
-              {isRunning ? 'RUN ON' : 'WALK'}
-            </span>
-          </button>
+              <button
+                type="button"
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  handleSit();
+                }}
+                onClick={handleSit}
+                className="w-14 h-14 rounded-2xl bg-theatre-pink border-2 border-theatre-gold text-white font-bold flex flex-col items-center justify-center active:scale-95 shadow-glow-pink transition-transform"
+                title="Stand Up"
+              >
+                <Armchair className="w-5 h-5" />
+                <span className="text-[9px] font-extrabold mt-0.5 tracking-tight">STAND</span>
+              </button>
+            </div>
+          ) : (
+            /* Cinema / Swing Sitting: Only the Stand Button is shown */
+            <div className="flex items-center">
+              <button
+                type="button"
+                onTouchStart={(e) => {
+                  e.stopPropagation();
+                  handleSit();
+                }}
+                onClick={handleSit}
+                className="w-14 h-14 rounded-2xl bg-theatre-pink border-2 border-theatre-gold text-white font-bold flex flex-col items-center justify-center active:scale-95 shadow-glow-pink transition-transform"
+                title="Stand Up"
+              >
+                <Armchair className="w-5 h-5" />
+                <span className="text-[9px] font-extrabold mt-0.5 tracking-tight">STAND</span>
+              </button>
+            </div>
+          )
+        ) : (
+          /* Normal Standing Mode: Sit, Run/Sprint, Jump/Hop */
+          <div className="flex items-center gap-2.5">
+            {/* Sit Button */}
+            <button
+              type="button"
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                handleSit();
+              }}
+              onClick={handleSit}
+              className="w-13 h-13 p-3 rounded-2xl flex flex-col items-center justify-center backdrop-blur-md border text-white transition-all active:scale-95 shadow-lg bg-theatre-surface/85 border-white/20"
+              title="Sit Down"
+            >
+              <Armchair className="w-5 h-5" />
+              <span className="text-[9px] font-bold mt-0.5 tracking-tight">SIT</span>
+            </button>
 
-          {/* Jump / Hop Button */}
-          <button
-            type="button"
-            onTouchStart={(e) => {
-              e.stopPropagation();
-              handleJump();
-            }}
-            onClick={handleJump}
-            className="w-14 h-14 p-3 rounded-2xl bg-gradient-to-tr from-theatre-pink/90 to-purple-600/90 border-2 border-pink-400/50 flex flex-col items-center justify-center backdrop-blur-md text-white active:scale-95 shadow-glow-pink transition-transform"
-            title="Hop / Jump"
-          >
-            <ArrowUp className="w-6 h-6 stroke-[2.5]" />
-            <span className="text-[9px] font-black tracking-tight">HOP</span>
-          </button>
-        </div>
+            {/* Run / Sprint Button */}
+            <button
+              type="button"
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                toggleRun();
+              }}
+              onClick={toggleRun}
+              className={`w-13 h-13 p-3 rounded-2xl flex flex-col items-center justify-center backdrop-blur-md border transition-all active:scale-95 shadow-lg ${
+                isRunning
+                  ? 'bg-theatre-gold border-amber-300 text-theatre-darkest shadow-glow-gold'
+                  : 'bg-theatre-surface/85 border-white/20 text-white'
+              }`}
+              title="Toggle Sprint"
+            >
+              <Zap className={`w-5 h-5 ${isRunning ? 'fill-current' : ''}`} />
+              <span className="text-[9px] font-bold mt-0.5 tracking-tight">
+                {isRunning ? 'RUN ON' : 'WALK'}
+              </span>
+            </button>
+
+            {/* Jump / Hop Button */}
+            <button
+              type="button"
+              onTouchStart={(e) => {
+                e.stopPropagation();
+                handleJump();
+              }}
+              onClick={handleJump}
+              className="w-14 h-14 p-3 rounded-2xl bg-gradient-to-tr from-theatre-pink/90 to-purple-600/90 border-2 border-pink-400/50 flex flex-col items-center justify-center backdrop-blur-md text-white active:scale-95 shadow-glow-pink transition-transform"
+              title="Hop / Jump"
+            >
+              <ArrowUp className="w-6 h-6 stroke-[2.5]" />
+              <span className="text-[9px] font-black tracking-tight">HOP</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

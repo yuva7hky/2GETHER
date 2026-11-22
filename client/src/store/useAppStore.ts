@@ -58,9 +58,11 @@ interface AppStore {
   localAnimationState: CharacterAnimationState;
   isSitting: boolean;
   seatIndex: number | null;
+  seesawTargetAngle: number;
   setLocalTransform: (transform: PlayerTransform) => void;
   setLocalAnimationState: (state: CharacterAnimationState) => void;
   setSitting: (isSitting: boolean, seatIndex: number | null) => void;
+  setSeesawTargetAngle: (angle: number) => void;
 
   // Movie Player
   currentMovie: MovieMetadata | null;
@@ -263,9 +265,11 @@ export const useAppStore = create<AppStore>((set) => ({
   localAnimationState: 'IDLE',
   isSitting: false,
   seatIndex: null,
+  seesawTargetAngle: 0.18,
   setLocalTransform: (localTransform) => set({ localTransform }),
   setLocalAnimationState: (localAnimationState) => set({ localAnimationState }),
   setSitting: (isSitting, seatIndex) => set({ isSitting, seatIndex }),
+  setSeesawTargetAngle: (seesawTargetAngle) => set({ seesawTargetAngle }),
 
   // Theatre Co-op Quest State
   quest: {

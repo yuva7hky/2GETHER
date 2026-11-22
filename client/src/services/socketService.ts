@@ -150,6 +150,11 @@ class SocketService {
       }
     });
 
+    // Street See-saw synchronization
+    this.socket.on('theatre:seesaw_update', (data: { angle: number }) => {
+      useAppStore.getState().setSeesawTargetAngle(data.angle);
+    });
+
     // Movie synchronization
     this.socket.on('movie:synced', (syncState: MovieSyncState) => {
       useAppStore.getState().setMovieSync(syncState);
@@ -278,6 +283,12 @@ class SocketService {
   public sendSitToggle(isSitting: boolean, seatIndex: number | null): void {
     if (!this.socket || !this.socket.connected) return;
     this.socket.emit('theatre:sit', { isSitting, seatIndex });
+  }
+
+  public sendSeesawPush(angle: number): void {
+    useAppStore.getState().setSeesawTargetAngle(angle);
+    if (!this.socket || !this.socket.connected) return;
+    this.socket.emit('theatre:seesaw', { angle });
   }
 
   public sendMovieSync(action: 'PLAY' | 'PAUSE' | 'SEEK', currentTime: number, playbackUrl?: string): void {

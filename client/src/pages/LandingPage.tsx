@@ -13,32 +13,33 @@ export const LandingPage: React.FC = () => {
       <div className="absolute -top-32 -left-32 w-96 h-96 bg-theatre-pink/20 rounded-full blur-[120px] pointer-events-none -z-10" />
       <div className="absolute top-1/3 -right-32 w-96 h-96 bg-theatre-gold/15 rounded-full blur-[140px] pointer-events-none -z-10" />
 
-      {/* Top Navigation Bar */}
-      <header className="w-full max-w-7xl mx-auto px-6 py-6 flex items-center justify-between z-20">
-        <div className="flex items-center gap-2.5">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-theatre-pink to-theatre-gold flex items-center justify-center text-theatre-darkest shadow-glow-pink">
-            <Film className="w-5 h-5" />
+      {/* Top Navigation Bar (Mobile Responsive without cutting edge) */}
+      <header className="w-full max-w-7xl mx-auto px-3.5 sm:px-6 py-4 sm:py-6 flex items-center justify-between z-20 gap-2">
+        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-theatre-pink to-theatre-gold flex items-center justify-center text-theatre-darkest shadow-glow-pink">
+            <Film className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
           <div>
-            <h1 className="font-extrabold text-2xl tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white via-theatre-blush to-theatre-gold">
+            <h1 className="font-extrabold text-xl sm:text-2xl tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-white via-theatre-blush to-theatre-gold">
               2GETHER
             </h1>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4 shrink-0">
           <button
             onClick={() => setView('CHARACTER_CREATION')}
-            className="text-sm text-slate-300 hover:text-white transition px-3 py-1.5 rounded-xl hover:bg-white/5"
+            className="text-xs sm:text-sm text-slate-300 hover:text-white transition px-2 sm:px-3 py-1.5 rounded-xl hover:bg-white/5 truncate max-w-[110px] sm:max-w-none"
+            title={`Avatar (${profile.characterName})`}
           >
             Avatar ({profile.characterName})
           </button>
           <button
             onClick={() => setView('DASHBOARD')}
-            className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-theatre-pink to-pink-600 text-white font-medium text-sm shadow-glow-pink hover:brightness-110 active:scale-95 transition flex items-center gap-2"
+            className="px-3.5 sm:px-5 py-2 sm:py-2.5 rounded-xl sm:rounded-2xl bg-gradient-to-r from-theatre-pink to-pink-600 text-white font-medium text-xs sm:text-sm shadow-glow-pink hover:brightness-110 active:scale-95 transition flex items-center gap-1.5 sm:gap-2 shrink-0 whitespace-nowrap"
           >
             <span>Enter Lobby</span>
-            <ArrowRight className="w-4 h-4" />
+            <ArrowRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
           </button>
         </div>
       </header>

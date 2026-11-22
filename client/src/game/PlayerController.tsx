@@ -11,7 +11,10 @@ import {
   THEATRE_DOOR_POS,
   SWING_POS,
   SWING_SEATS,
+  SEESAW_POS,
+  SEESAW_SEATS,
   getSwingSeatTransform,
+  getSeesawSeatTransform,
 } from '../theatre/OutdoorStreetScene';
 
 // Module-level scratch vectors to prevent GC allocations on mobile
@@ -59,6 +62,8 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
   const setSitting = useAppStore((state) => state.setSitting);
   const quest = useAppStore((state) => state.quest);
   const otherPlayer = useAppStore((state) => state.otherPlayer);
+  const seesawTargetAngle = useAppStore((state) => state.seesawTargetAngle);
+  const seesawCurrentAngleRef = useRef<number>(0.18);
 
   // Authoritative initial spawn coordinates from server localPlayer
   const spawnTransform = localPlayer?.transform || { x: -1.5, y: 0, z: 38.0, rotY: Math.PI };
@@ -301,6 +306,14 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
           playerRef.current.position.set(3.4, 0, 32.0);
           playerRef.current.rotation.set(0, 0, 0);
         }
+      } else if (seatIndex === 20 || seatIndex === 21) {
+        // Step onto street aisle beside see-saw
+        pos.current.set(-3.4, 0, 32.0);
+        rotY.current = 0;
+        if (playerRef.current) {
+          playerRef.current.position.set(-3.4, 0, 32.0);
+          playerRef.current.rotation.set(0, 0, 0);
+        }
       } else {
         // Stand in cinema aisle
         pos.current.z = 1.9;
@@ -316,10 +329,9 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
       return;
     }
 
-    // 1. Check proximity to 2-Player Romantic Swing on street runway
+    // 1. Check proximity to 2-Player Swing on street runway
     const distToSwing = Math.hypot(pos.current.x - SWING_POS[0], pos.current.z - SWING_POS[2]);
     if (distToSwing < 2.5) {
-      // Intelligently assign seat: if partner sits on 10, take 11, and vice-versa
       const partnerSeat = otherPlayer?.isSitting ? otherPlayer.seatIndex : null;
       let targetSeat = SWING_SEATS[0];
       if (partnerSeat === 10) {
@@ -327,10 +339,32 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
       } else if (partnerSeat === 11) {
         targetSeat = SWING_SEATS[0];
       } else {
-        // Pick whichever seat is closest to player
         const d0 = Math.hypot(pos.current.x - SWING_SEATS[0].x, pos.current.z - SWING_SEATS[0].z);
         const d1 = Math.hypot(pos.current.x - SWING_SEATS[1].x, pos.current.z - SWING_SEATS[1].z);
         targetSeat = d0 <= d1 ? SWING_SEATS[0] : SWING_SEATS[1];
+      }
+
+      pos.current.set(targetSeat.x, targetSeat.y, targetSeat.z);
+      rotY.current = targetSeat.rotY;
+      setSitting(true, targetSeat.seatIndex);
+      setLocalAnimationState('SIT');
+      socketService.sendSitToggle(true, targetSeat.seatIndex);
+      return;
+    }
+
+    // 1.5. Check proximity to 2-Player Interactive See-Saw on street
+    const distToSeesaw = Math.hypot(pos.current.x - SEESAW_POS[0], pos.current.z - SEESAW_POS[2]);
+    if (distToSeesaw < 2.5) {
+      const partnerSeat = otherPlayer?.isSitting ? otherPlayer.seatIndex : null;
+      let targetSeat = SEESAW_SEATS[0];
+      if (partnerSeat === 20) {
+        targetSeat = SEESAW_SEATS[1];
+      } else if (partnerSeat === 21) {
+        targetSeat = SEESAW_SEATS[0];
+      } else {
+        const d0 = Math.hypot(pos.current.x - SEESAW_SEATS[0].x, pos.current.z - SEESAW_SEATS[0].z);
+        const d1 = Math.hypot(pos.current.x - SEESAW_SEATS[1].x, pos.current.z - SEESAW_SEATS[1].z);
+        targetSeat = d0 <= d1 ? SEESAW_SEATS[0] : SEESAW_SEATS[1];
       }
 
       pos.current.set(targetSeat.x, targetSeat.y, targetSeat.z);
@@ -375,11 +409,16 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
     let nearestIdx: number | null = null;
 
     if (!isSitting) {
-      // Check Swing proximity
+      // Check Swing & See-Saw proximity
       const distToSwing = Math.hypot(pos.current.x - SWING_POS[0], pos.current.z - SWING_POS[2]);
+      const distToSeesaw = Math.hypot(pos.current.x - SEESAW_POS[0], pos.current.z - SEESAW_POS[2]);
+
       if (distToSwing < 2.5) {
         inSeatRange = true;
         nearestIdx = 10;
+      } else if (distToSeesaw < 2.5) {
+        inSeatRange = true;
+        nearestIdx = 20;
       } else if (quest.isDoorUnlocked && pos.current.z < 11.0) {
         for (const seat of SEATS) {
           const dist = Math.hypot(pos.current.x - seat.x, pos.current.z - seat.z);
@@ -452,6 +491,40 @@ export const PlayerController: React.FC<PlayerControllerProps> = ({
         // Romantic street swing camera view - couple framing
         TEMP_TARGET_CAM.set(1.5, 1.8, 32.0);
         TEMP_LOOK_AT.set(4.6, 1.4, 32.0);
+        const sitLerp = Math.min(1.0, safeDelta * 3.5);
+        camera.position.lerp(TEMP_TARGET_CAM, sitLerp);
+        camera.lookAt(TEMP_LOOK_AT);
+      } else if (seatIndex === 20 || seatIndex === 21) {
+        // Dynamic See-Saw Motion
+        seesawCurrentAngleRef.current = THREE.MathUtils.lerp(
+          seesawCurrentAngleRef.current,
+          seesawTargetAngle,
+          safeDelta * 7
+        );
+        const seesawTransform = getSeesawSeatTransform(seatIndex, seesawCurrentAngleRef.current);
+        pos.current.set(seesawTransform.x, seesawTransform.y, seesawTransform.z);
+        rotY.current = seesawTransform.rotY;
+
+        playerRef.current.position.copy(pos.current);
+        playerRef.current.rotation.order = 'YXZ';
+        playerRef.current.rotation.set(seesawTransform.tiltX, seesawTransform.rotY, 0);
+
+        // Interactive keyboard controls for See-Saw on Desktop
+        if (keys.current['KeyW'] || keys.current['ArrowUp'] || keys.current['KeyE']) {
+          const target = seatIndex === 20 ? 0.22 : -0.22;
+          if (Math.abs(seesawTargetAngle - target) > 0.05) {
+            socketService.sendSeesawPush(target);
+          }
+        } else if (keys.current['KeyS'] || keys.current['ArrowDown'] || keys.current['KeyQ']) {
+          const target = seatIndex === 20 ? -0.22 : 0.22;
+          if (Math.abs(seesawTargetAngle - target) > 0.05) {
+            socketService.sendSeesawPush(target);
+          }
+        }
+
+        // Side-view camera framing both characters on see-saw
+        TEMP_TARGET_CAM.set(-1.8, 1.8, 32.0);
+        TEMP_LOOK_AT.set(-4.6, 1.2, 32.0);
         const sitLerp = Math.min(1.0, safeDelta * 3.5);
         camera.position.lerp(TEMP_TARGET_CAM, sitLerp);
         camera.lookAt(TEMP_LOOK_AT);
