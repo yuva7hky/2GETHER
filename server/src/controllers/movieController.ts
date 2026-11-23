@@ -297,6 +297,7 @@ export const movieController = {
 
       // Member authorization check
       const isMember =
+        !userId ||
         room.hostId === userId ||
         room.guestId === userId ||
         room.hostPlayerId === userId ||
