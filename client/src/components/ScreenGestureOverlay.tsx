@@ -65,6 +65,15 @@ export const ScreenGestureOverlay: React.FC = () => {
     didDragRef.current = false;
     showControlsTemporarily();
 
+    // Explicit audio unlock on user gesture
+    const vid = useAppStore.getState().activeVideoElement;
+    if (vid && vid.muted) {
+      vid.muted = false;
+      if (useAppStore.getState().isPlaying && vid.paused) {
+        vid.play().catch(() => {});
+      }
+    }
+
     const rect = e.currentTarget.getBoundingClientRect();
     const relX = (e.clientX - rect.left) / rect.width;
     const zone: 'LEFT' | 'CENTER' | 'RIGHT' = relX < 0.35 ? 'LEFT' : relX > 0.65 ? 'RIGHT' : 'CENTER';
@@ -193,7 +202,7 @@ export const ScreenGestureOverlay: React.FC = () => {
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
-      className="absolute inset-0 z-20 pointer-events-auto select-none overflow-hidden"
+      className="absolute inset-0 z-30 pointer-events-auto select-none overflow-hidden"
     >
       {/* 1. VISUAL GESTURE BADGES (Animated Ripple Feedback) */}
       {gestureFeedback && (

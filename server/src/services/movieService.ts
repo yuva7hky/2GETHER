@@ -25,12 +25,10 @@ export const ALLOWED_MIME_TYPES = [
   'video/mp4',
   'video/webm',
   'video/quicktime',
-  'video/x-matroska',
-  'video/ogg',
   'application/octet-stream', // Fallback for raw video uploads
 ];
 
-export const ALLOWED_EXTENSIONS = ['.mp4', '.webm', '.mov', '.mkv', '.ogv'];
+export const ALLOWED_EXTENSIONS = ['.mp4', '.webm', '.mov'];
 
 export class MovieService {
   private s3Client: S3Client | null = null;

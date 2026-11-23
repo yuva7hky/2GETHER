@@ -20,6 +20,7 @@ import { MobileControls } from '../components/MobileControls';
 import { ChatDrawer } from '../components/ChatDrawer';
 import { MoviePlayerOverlay } from '../components/MoviePlayerOverlay';
 import { SettingsModal } from '../components/SettingsModal';
+import { CinemaVideoLayer } from '../components/CinemaVideoLayer';
 import { ScreenGestureOverlay } from '../components/ScreenGestureOverlay';
 import { VoiceMicButton } from '../components/VoiceMicButton';
 import { QuestBanner } from '../components/QuestBanner';
@@ -370,14 +371,7 @@ export const VirtualTheatre: React.FC = () => {
       )}
 
       {/* 2.4 DEDICATED FULL-SCREEN CINEMA MOVIE LAYER (Active while seated in cinema) */}
-      <div
-        id="cinema-video-layer"
-        className={`absolute inset-0 z-10 bg-black flex items-center justify-center transition-opacity duration-300 pointer-events-none ${
-          isSitting && (seatIndex === 0 || seatIndex === 1) && currentMovie
-            ? 'opacity-100'
-            : 'opacity-0'
-        }`}
-      />
+      <CinemaVideoLayer />
 
       {/* 2.5 INTERACTIVE TOUCH & GESTURE CINEMA SCREEN OVERLAY */}
       <ScreenGestureOverlay />
@@ -394,7 +388,7 @@ export const VirtualTheatre: React.FC = () => {
           precision: isTouchDevice ? 'mediump' : 'highp',
         }}
         camera={{ position: [-1.5, 2.4, 26.6], fov: 50 }}
-        className="w-full h-full cursor-default touch-none"
+        className="relative z-0 w-full h-full cursor-default touch-none"
       >
         <ambientLight intensity={0.65} color="#e0e7ff" />
 
