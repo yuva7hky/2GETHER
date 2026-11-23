@@ -42,6 +42,7 @@ export interface MovieMetadata {
   durationSeconds: number;
   status: 'UPLOADING' | 'READY' | 'PLAYING' | 'ERROR';
   playbackUrl?: string;
+  directR2Url?: string;
 }
 
 export interface MovieSyncState {

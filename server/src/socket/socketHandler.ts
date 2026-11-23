@@ -213,6 +213,10 @@ export function setupSocketHandler(io: Server): void {
       const roomCode = roomService.getRoomCodeBySocket(socket.id);
       if (!roomCode) return;
 
+      if (movieData) {
+        roomService.setRoomMovie(roomCode, movieData);
+      }
+
       io.to(roomCode).emit('movie:loaded', {
         movie: movieData,
         syncState: {

@@ -30,12 +30,14 @@ export const ScreenMesh: React.FC = () => {
   const lastSyncBroadcastRef = useRef<number>(0);
   const rvfcRef = useRef<number>(0);
 
-  // Setup HTML5 video element with clean 2D Canvas bridge
+  // Setup HTML5 video element with clean 2D Canvas bridge on Android and direct GPU VideoTexture on Desktop
   useEffect(() => {
     if (!currentMovie?.playbackUrl) {
       if (videoElement) {
+        videoElement.onerror = null;
         videoElement.pause();
-        videoElement.src = '';
+        videoElement.removeAttribute('src');
+        videoElement.load();
         if (videoElement.parentNode) {
           videoElement.parentNode.removeChild(videoElement);
         }
@@ -51,33 +53,7 @@ export const ScreenMesh: React.FC = () => {
 
     console.log('[ScreenMesh] Initializing movie playback stream:', resolvedUrl);
 
-    // 1. Offscreen canvas buffer (CPU bitmap with willReadFrequently: true so texImage2D cannot sample a live Skia tile)
-    const maxW = isAndroid ? 854 : 1280;
-    const maxH = isAndroid ? 480 : 720;
-    const canvas = document.createElement('canvas');
-    canvas.width = maxW;
-    canvas.height = maxH;
-    const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
-    offscreenCanvasRef.current = canvas;
-    offscreenCtxRef.current = ctx;
-
-    // Initial warm standby fill
-    if (ctx) {
-      ctx.fillStyle = '#0a0515';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-
-    const canvasTexture = new THREE.CanvasTexture(canvas);
-    canvasTexture.wrapS = THREE.ClampToEdgeWrapping;
-    canvasTexture.wrapT = THREE.ClampToEdgeWrapping;
-    canvasTexture.minFilter = THREE.LinearFilter;
-    canvasTexture.magFilter = THREE.LinearFilter;
-    canvasTexture.generateMipmaps = false;
-    canvasTexture.colorSpace = THREE.SRGBColorSpace;
-    canvasTexture.unpackAlignment = 1;
-    setScreenTexture(canvasTexture);
-
-    // 2. Video element
+    // 1. Create Video Element
     const vid = document.createElement('video');
     vid.src = resolvedUrl;
     vid.crossOrigin = 'anonymous';
@@ -104,40 +80,75 @@ export const ScreenMesh: React.FC = () => {
     setVideoElement(vid);
     useAppStore.getState().setActiveVideoElement(vid);
 
-    vid.oncanplay = () => {
+    const markVideoReady = () => {
       setIsVideoReady(true);
     };
 
-    vid.onloadeddata = () => {
-      setIsVideoReady(true);
-    };
+    vid.oncanplay = markVideoReady;
+    vid.onloadeddata = markVideoReady;
+    vid.onplaying = markVideoReady;
+    vid.onseeked = markVideoReady;
 
     vid.onloadedmetadata = () => {
       if (vid.duration && !isNaN(vid.duration)) {
         useAppStore.getState().setMovieDuration(vid.duration);
       }
+      if (vid.readyState >= 2) {
+        markVideoReady();
+      }
     };
 
     vid.ontimeupdate = () => {
+      if (vid.currentTime > 0) markVideoReady();
       useAppStore.getState().setMovieTime(vid.currentTime);
     };
 
     vid.onerror = () => {
-      console.error('[ScreenMesh] Video element error:', vid.error);
+      if (vid.src) {
+        console.error('[ScreenMesh] Video element error:', vid.error);
+      }
     };
 
-    // Drive texture upload from requestVideoFrameCallback on desktop / non-seated mode
+    if (vid.readyState >= 2) {
+      markVideoReady();
+    }
+
+    // 2. Texture setup: GPU VideoTexture on Desktop/iOS, 2D Canvas buffer on Android
+    let texture: THREE.Texture;
     let isCancelled = false;
-    const paint = () => {
-      if (isCancelled) return;
-      if ('requestVideoFrameCallback' in vid) {
-        rvfcRef.current = vid.requestVideoFrameCallback(() => {
-          const c = offscreenCanvasRef.current;
-          const cx = offscreenCtxRef.current;
-          if (!cx || !c || vid.readyState < 2) {
-            paint();
-            return;
-          }
+    let animFrameId: number | null = null;
+
+    if (isAndroid) {
+      const maxW = 854;
+      const maxH = 480;
+      const canvas = document.createElement('canvas');
+      canvas.width = maxW;
+      canvas.height = maxH;
+      const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: true });
+      offscreenCanvasRef.current = canvas;
+      offscreenCtxRef.current = ctx;
+
+      if (ctx) {
+        ctx.fillStyle = '#0a0515';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      const canvasTexture = new THREE.CanvasTexture(canvas);
+      canvasTexture.wrapS = THREE.ClampToEdgeWrapping;
+      canvasTexture.wrapT = THREE.ClampToEdgeWrapping;
+      canvasTexture.minFilter = THREE.LinearFilter;
+      canvasTexture.magFilter = THREE.LinearFilter;
+      canvasTexture.generateMipmaps = false;
+      canvasTexture.colorSpace = THREE.SRGBColorSpace;
+      canvasTexture.unpackAlignment = 1;
+      texture = canvasTexture;
+      setScreenTexture(canvasTexture);
+
+      const paint = () => {
+        if (isCancelled) return;
+        const c = offscreenCanvasRef.current;
+        const cx = offscreenCtxRef.current;
+        if (cx && c && vid.readyState >= 2) {
           const vw = vid.videoWidth || maxW;
           const vh = vid.videoHeight || maxH;
           const videoAspect = vw / vh;
@@ -155,16 +166,35 @@ export const ScreenMesh: React.FC = () => {
           }
           cx.fillStyle = '#0a0515';
           cx.fillRect(0, 0, maxW, maxH);
-          cx.drawImage(vid, dx, dy, dw, dh);
-          cx.getImageData(0, 0, 1, 1); // Stalls CPU/GPU queue until Skia raster is 100% complete
+          try {
+            cx.drawImage(vid, dx, dy, dw, dh);
+          } catch (e) {
+            // Safe fallback if tainted
+          }
           canvasTexture.needsUpdate = true;
-          paint();
-        });
-      }
-    };
-    paint();
+        }
 
-    // Global interaction listener to auto-unmute on first user touch / click
+        if ('requestVideoFrameCallback' in vid) {
+          rvfcRef.current = (vid as any).requestVideoFrameCallback(() => paint());
+        } else {
+          animFrameId = requestAnimationFrame(paint);
+        }
+      };
+      paint();
+    } else {
+      // Desktop / iOS: Direct Hardware-Accelerated VideoTexture
+      const videoTexture = new THREE.VideoTexture(vid);
+      videoTexture.wrapS = THREE.ClampToEdgeWrapping;
+      videoTexture.wrapT = THREE.ClampToEdgeWrapping;
+      videoTexture.minFilter = THREE.LinearFilter;
+      videoTexture.magFilter = THREE.LinearFilter;
+      videoTexture.generateMipmaps = false;
+      videoTexture.colorSpace = THREE.SRGBColorSpace;
+      texture = videoTexture;
+      setScreenTexture(videoTexture);
+    }
+
+    // Global interaction listener to auto-unmute on first user touch / click / keypress
     const handleUserInteraction = () => {
       if (vid.muted) {
         vid.muted = false;
@@ -174,19 +204,25 @@ export const ScreenMesh: React.FC = () => {
       }
     };
     window.addEventListener('pointerdown', handleUserInteraction);
+    window.addEventListener('keydown', handleUserInteraction);
 
     return () => {
       isCancelled = true;
+      if (animFrameId) cancelAnimationFrame(animFrameId);
       if (rvfcRef.current && 'cancelVideoFrameCallback' in vid) {
-        vid.cancelVideoFrameCallback(rvfcRef.current);
+        (vid as any).cancelVideoFrameCallback(rvfcRef.current);
       }
       window.removeEventListener('pointerdown', handleUserInteraction);
+      window.removeEventListener('keydown', handleUserInteraction);
+      // Suppress error event during cleanup to prevent MEDIA_ELEMENT_ERROR: Empty src attribute
+      vid.onerror = null;
       vid.pause();
-      vid.src = '';
+      vid.removeAttribute('src');
+      vid.load();
       if (vid.parentNode) {
         vid.parentNode.removeChild(vid);
       }
-      canvasTexture.dispose();
+      texture.dispose();
       useAppStore.getState().setActiveVideoElement(null);
     };
   }, [currentMovie?.playbackUrl]);
@@ -275,6 +311,11 @@ export const ScreenMesh: React.FC = () => {
   useFrame((state) => {
     const now = performance.now();
 
+    // 0. Ensure VideoTexture refreshes every frame during desktop playback
+    if (!isAndroid && screenTexture && videoElement && !videoElement.paused) {
+      screenTexture.needsUpdate = true;
+    }
+
     // 1. Host sync heartbeat: broadcast playback time every 2 seconds
     if (isHost && isPlaying && videoElement && !videoElement.paused) {
       if (now - lastSyncBroadcastRef.current > 2000) {
@@ -307,7 +348,7 @@ export const ScreenMesh: React.FC = () => {
       {/* Main Cinema Screen Canvas (On Android while seated, DOM video renders in front, leaving mesh as dark plane) */}
       <mesh ref={screenRef} position={[0, 0, 0.05]}>
         <planeGeometry args={[13.6, 7.6]} />
-        {screenTexture && isVideoReady && !useDomVideo ? (
+        {screenTexture && (isVideoReady || isPlaying) && !useDomVideo ? (
           <meshBasicMaterial map={screenTexture} toneMapped={false} />
         ) : (
           <meshStandardMaterial
@@ -321,7 +362,7 @@ export const ScreenMesh: React.FC = () => {
       </mesh>
 
       {/* Standby UI displayed on screen when no movie or video is loading */}
-      {(!screenTexture || !isVideoReady) && (
+      {(!screenTexture || (!isVideoReady && !isPlaying)) && (
         <group position={[0, 0, 0.1]}>
           <Text
             position={[0, 1.2, 0]}

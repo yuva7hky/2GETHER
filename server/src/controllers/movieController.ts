@@ -71,10 +71,15 @@ export const movieController = {
       }
 
       if (room.movie) {
+        const directR2Url = await movieService.getPlaybackUrl(room.movie.r2Key);
         res.json({
           success: true,
           hasMovie: true,
-          movie: room.movie,
+          movie: {
+            ...room.movie,
+            playbackUrl: directR2Url || room.movie.playbackUrl,
+            directR2Url: directR2Url || room.movie.directR2Url,
+          },
         });
         return;
       }
@@ -93,6 +98,7 @@ export const movieController = {
             durationSeconds: 0,
             status: 'READY' as const,
             playbackUrl: freshUrl,
+            directR2Url: freshUrl,
           };
           roomService.setRoomMovie(normalizedCode, restoredMovie);
           res.json({
@@ -202,6 +208,7 @@ export const movieController = {
       );
 
       const streamUrl = `/api/movies/${normalizedCode}/stream`;
+      const primaryPlaybackUrl = directR2Url || streamUrl;
 
       const movieMetadata = {
         id: `movie_${Date.now()}`,
@@ -211,7 +218,7 @@ export const movieController = {
         fileSize: data.fileSize,
         durationSeconds: 0,
         status: 'READY' as const,
-        playbackUrl: streamUrl,
+        playbackUrl: primaryPlaybackUrl,
         directR2Url,
       };
 
@@ -348,15 +355,16 @@ export const movieController = {
         return;
       }
 
-      // Return stream URL for cinema playback
-      const streamUrl = `/api/movies/${normalizedCode}/stream`;
+      // Direct R2 presigned URL for zero-bandwidth cinema playback
+      const directR2Url = await movieService.getPlaybackUrl(room.movie.r2Key);
       res.json({
         success: true,
         hasMovie: true,
-        playbackUrl: streamUrl,
+        playbackUrl: directR2Url || room.movie.playbackUrl,
         movie: {
           ...room.movie,
-          playbackUrl: streamUrl,
+          playbackUrl: directR2Url || room.movie.playbackUrl,
+          directR2Url: directR2Url || room.movie.directR2Url,
         },
       });
     } catch (err) {
@@ -507,6 +515,17 @@ export const movieController = {
       if (!r2Key) {
         res.status(404).json({ success: false, error: 'No movie found for this room' });
         return;
+      }
+
+      // Fast HTTP 302 redirect directly to Cloudflare R2 presigned URL to preserve Render server bandwidth
+      try {
+        const directR2Url = await movieService.getPlaybackUrl(r2Key);
+        if (directR2Url && directR2Url.startsWith('http')) {
+          res.redirect(302, directR2Url);
+          return;
+        }
+      } catch (redirErr) {
+        // Fallback to proxy stream if presign fails
       }
 
       const rangeHeader = req.headers.range;

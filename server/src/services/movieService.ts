@@ -53,6 +53,10 @@ export class MovieService {
         setTimeout(() => this.cleanupStaleMultipartUploads(), 2000);
         setInterval(() => this.cleanupStaleMultipartUploads(), 10 * 60 * 1000); // Every 10 minutes
 
+        // Schedule periodic purge of old movies (older than 3 hours) to strictly protect Cloudflare R2 10 GB free limit
+        setTimeout(() => this.purgeStaleRoomMovies(3), 5000);
+        setInterval(() => this.purgeStaleRoomMovies(3), 30 * 60 * 1000); // Every 30 minutes
+
         // Configure R2 bucket CORS for seamless direct browser uploads
         setTimeout(() => this.configureR2Cors(), 1500);
       } catch (err: any) {
@@ -391,48 +395,106 @@ export class MovieService {
    * Called when a host leaves the room, closes the tab, or the room expires
    */
   public async deleteMovieByRoom(roomCode: string): Promise<void> {
-    if (!this.s3Client) return;
+    if (!this.s3Client || !config.R2_BUCKET_NAME) return;
 
     const normalizedCode = roomCode.trim().toUpperCase();
-    const prefix = `rooms/${normalizedCode}/`;
+    const prefixes = [
+      `rooms/${normalizedCode}/`,
+      `rooms/${normalizedCode.toLowerCase()}/`,
+    ];
 
-    try {
-      // 1. Abort any ongoing multipart uploads under this room prefix
-      const listMulti = await this.s3Client.send(
-        new ListMultipartUploadsCommand({
-          Bucket: config.R2_BUCKET_NAME,
-          Prefix: prefix,
-        })
-      );
-
-      if (listMulti.Uploads && listMulti.Uploads.length > 0) {
-        for (const u of listMulti.Uploads) {
-          if (u.Key && u.UploadId) {
-            await this.abortMultipartUpload(u.Key, u.UploadId);
-          }
-        }
-      }
-
-      // 2. Delete all committed objects under this room prefix
-      const listObjects = await this.s3Client.send(
-        new ListObjectsV2Command({
-          Bucket: config.R2_BUCKET_NAME,
-          Prefix: prefix,
-        })
-      );
-
-      if (listObjects.Contents && listObjects.Contents.length > 0) {
-        const objectsToDelete = listObjects.Contents.filter((c) => c.Key).map((c) => ({ Key: c.Key! }));
-        await this.s3Client.send(
-          new DeleteObjectsCommand({
+    for (const prefix of prefixes) {
+      try {
+        // 1. Abort any ongoing multipart uploads under this room prefix
+        const listMulti = await this.s3Client.send(
+          new ListMultipartUploadsCommand({
             Bucket: config.R2_BUCKET_NAME,
-            Delete: { Objects: objectsToDelete },
+            Prefix: prefix,
           })
         );
-        console.log(`[MovieService] Purged ${objectsToDelete.length} movie objects from R2 for room ${normalizedCode}`);
+
+        if (listMulti.Uploads && listMulti.Uploads.length > 0) {
+          for (const u of listMulti.Uploads) {
+            if (u.Key && u.UploadId) {
+              await this.abortMultipartUpload(u.Key, u.UploadId);
+            }
+          }
+        }
+
+        // 2. Delete all committed objects under this room prefix
+        let continuationToken: string | undefined = undefined;
+        do {
+          const listObjects: any = await this.s3Client.send(
+            new ListObjectsV2Command({
+              Bucket: config.R2_BUCKET_NAME,
+              Prefix: prefix,
+              ContinuationToken: continuationToken,
+            })
+          );
+
+          if (listObjects.Contents && listObjects.Contents.length > 0) {
+            const objectsToDelete = listObjects.Contents.filter((c: any) => c.Key).map((c: any) => ({ Key: c.Key! }));
+            if (objectsToDelete.length > 0) {
+              await this.s3Client.send(
+                new DeleteObjectsCommand({
+                  Bucket: config.R2_BUCKET_NAME,
+                  Delete: { Objects: objectsToDelete },
+                })
+              );
+              console.log(`[MovieService] Purged ${objectsToDelete.length} movie objects from R2 for prefix ${prefix}`);
+            }
+          }
+          continuationToken = listObjects.IsTruncated ? listObjects.NextContinuationToken : undefined;
+        } while (continuationToken);
+      } catch (err: any) {
+        console.warn(`[MovieService] Warning purging storage for prefix ${prefix}:`, err.message);
       }
+    }
+  }
+
+  /**
+   * Automatic background safety sweeper to prevent exceeding Cloudflare R2's 10 GB free tier.
+   * Purges any movie file older than maxAgeHours (default 3 hours).
+   */
+  public async purgeStaleRoomMovies(maxAgeHours: number = 3): Promise<number> {
+    if (!this.s3Client || !config.R2_BUCKET_NAME) return 0;
+    try {
+      const cutoff = Date.now() - maxAgeHours * 60 * 60 * 1000;
+      let continuationToken: string | undefined = undefined;
+      let totalPurged = 0;
+
+      do {
+        const listObjects: any = await this.s3Client.send(
+          new ListObjectsV2Command({
+            Bucket: config.R2_BUCKET_NAME,
+            Prefix: 'rooms/',
+            ContinuationToken: continuationToken,
+          })
+        );
+
+        if (listObjects.Contents && listObjects.Contents.length > 0) {
+          const staleObjects = listObjects.Contents
+            .filter((c: any) => c.Key && c.LastModified && new Date(c.LastModified).getTime() < cutoff)
+            .map((c: any) => ({ Key: c.Key! }));
+
+          if (staleObjects.length > 0) {
+            await this.s3Client.send(
+              new DeleteObjectsCommand({
+                Bucket: config.R2_BUCKET_NAME,
+                Delete: { Objects: staleObjects },
+              })
+            );
+            totalPurged += staleObjects.length;
+            console.log(`[MovieService] Auto-purged ${staleObjects.length} stale movies (> ${maxAgeHours}h) to protect 10GB limit.`);
+          }
+        }
+        continuationToken = listObjects.IsTruncated ? listObjects.NextContinuationToken : undefined;
+      } while (continuationToken);
+
+      return totalPurged;
     } catch (err: any) {
-      console.warn(`[MovieService] Warning purging storage for room ${normalizedCode}:`, err.message);
+      console.warn('[MovieService] Warning running purgeStaleRoomMovies:', err.message);
+      return 0;
     }
   }
 
