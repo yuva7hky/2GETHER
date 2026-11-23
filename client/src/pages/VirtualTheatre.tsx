@@ -34,6 +34,7 @@ export const VirtualTheatre: React.FC = () => {
   const otherPlayer = useAppStore((state) => state.otherPlayer);
   const isSitting = useAppStore((state) => state.isSitting);
   const seatIndex = useAppStore((state) => state.seatIndex);
+  const currentMovie = useAppStore((state) => state.currentMovie);
   const unreadCount = useAppStore((state) => state.unreadCount);
   const leaveRoom = useAppStore((state) => state.leaveRoom);
   const uploadState = useAppStore((state) => state.uploadState);
@@ -367,6 +368,16 @@ export const VirtualTheatre: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* 2.4 DEDICATED FULL-SCREEN CINEMA MOVIE LAYER (Active while seated in cinema) */}
+      <div
+        id="cinema-video-layer"
+        className={`absolute inset-0 z-10 bg-black flex items-center justify-center transition-opacity duration-300 pointer-events-none ${
+          isSitting && (seatIndex === 0 || seatIndex === 1) && currentMovie
+            ? 'opacity-100'
+            : 'opacity-0'
+        }`}
+      />
 
       {/* 2.5 INTERACTIVE TOUCH & GESTURE CINEMA SCREEN OVERLAY */}
       <ScreenGestureOverlay />

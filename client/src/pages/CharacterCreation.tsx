@@ -173,22 +173,11 @@ export const CharacterCreation: React.FC = () => {
               </Float>
             </Center>
 
-            {/* Stage Pedestal */}
-            <mesh position={[0, -0.05, 0]} receiveShadow>
-              <cylinderGeometry args={[1.3, 1.4, 0.1, 32]} />
-              <meshStandardMaterial color="#24174a" roughness={0.4} />
-            </mesh>
-            <mesh position={[0, 0.01, 0]}>
-              <cylinderGeometry args={[1.25, 1.25, 0.02, 32]} />
-              <meshStandardMaterial color="#f59e0b" metalness={0.7} roughness={0.3} />
-            </mesh>
-
             <OrbitControls
               enablePan={false}
               minDistance={1.8}
               maxDistance={5.0}
-              maxPolarAngle={Math.PI / 2 + 0.1}
-              minPolarAngle={Math.PI / 4}
+              target={[0, 0, 0]}
             />
           </Canvas>
         </div>

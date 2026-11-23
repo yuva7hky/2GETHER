@@ -11,6 +11,10 @@ export const ScreenMesh: React.FC = () => {
   const syncState = useAppStore((state) => state.syncState);
   const isPlaying = useAppStore((state) => state.isPlaying);
   const isHost = useAppStore((state) => state.isHost);
+  const isSitting = useAppStore((state) => state.isSitting);
+  const seatIndex = useAppStore((state) => state.seatIndex);
+
+  const isSeatedInCinema = isSitting === true && (seatIndex === 0 || seatIndex === 1);
 
   const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
   const [screenTexture, setScreenTexture] = useState<THREE.Texture | null>(null);
@@ -143,6 +147,40 @@ export const ScreenMesh: React.FC = () => {
     };
   }, [currentMovie?.playbackUrl]);
 
+  // Dynamic Cinema Mode: Fullscreen DOM video when seated in cinema, offscreen when standing
+  useEffect(() => {
+    if (!videoElement) return;
+    const container = document.getElementById('cinema-video-layer');
+
+    if (isSeatedInCinema) {
+      if (container && !container.contains(videoElement)) {
+        container.appendChild(videoElement);
+      }
+      videoElement.style.position = 'absolute';
+      videoElement.style.left = '0';
+      videoElement.style.top = '0';
+      videoElement.style.width = '100vw';
+      videoElement.style.height = '100vh';
+      videoElement.style.objectFit = 'contain';
+      videoElement.style.background = '#000';
+      videoElement.style.opacity = '1';
+      videoElement.style.pointerEvents = 'none';
+      videoElement.style.zIndex = '10';
+    } else {
+      if (videoElement.parentNode && videoElement.parentNode !== document.body) {
+        document.body.appendChild(videoElement);
+      }
+      videoElement.style.position = 'fixed';
+      videoElement.style.left = '-9999px';
+      videoElement.style.top = '-9999px';
+      videoElement.style.width = '1px';
+      videoElement.style.height = '1px';
+      videoElement.style.opacity = '0.01';
+      videoElement.style.pointerEvents = 'none';
+      videoElement.style.zIndex = '0';
+    }
+  }, [isSeatedInCinema, videoElement]);
+
   // Synchronize play / pause with intelligent mobile unlock
   useEffect(() => {
     if (!videoElement) return;
@@ -199,8 +237,8 @@ export const ScreenMesh: React.FC = () => {
   useFrame((state) => {
     const now = performance.now();
 
-    // 0. Only refresh VideoTexture if frame is actually decoded to prevent WebGL texImage2D: no video error
-    if (screenTexture && videoElement && videoElement.readyState >= 2 && videoElement.videoWidth > 0 && !videoElement.paused) {
+    // 0. Only refresh VideoTexture if frame is actually decoded and player is standing to avoid WebGL overhead while seated
+    if (screenTexture && videoElement && videoElement.readyState >= 2 && videoElement.videoWidth > 0 && !videoElement.paused && !isSeatedInCinema) {
       screenTexture.needsUpdate = true;
     }
 

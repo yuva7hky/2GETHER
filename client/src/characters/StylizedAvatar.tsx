@@ -49,7 +49,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
   }, [appearance.gender, appearance.accessory, appearance.clothingColor, isLocal]);
 
   // Skin & Shared Materials
-  const skinColor = isGirl ? '#fff1e6' : (appearance.skinColor || '#ffe2c6');
+  const skinColor = appearance.skinColor || (isGirl ? '#fff1e6' : '#ffe2c6');
   const skinMat = useMemo(
     () => new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.35 }),
     [skinColor]
@@ -67,17 +67,20 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
   const mouthMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#9f1239' }), []);
 
   // Hair Materials
-  const hairColor = isGirl ? '#4a2818' : (appearance.hairColor || '#5c3317');
+  const hairColor = appearance.hairColor || (isGirl ? '#4a2818' : '#5c3317');
   const hairMat = useMemo(
     () => new THREE.MeshStandardMaterial({ color: hairColor, roughness: 0.55 }),
     [hairColor]
   );
 
-  // Clothing Materials - Boy
-  const hoodieCreamMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#faf6ee', roughness: 0.6 }),
-    []
+  // Clothing & Outfit Materials (Dynamic from customization)
+  const clothingColor = appearance.clothingColor || (isGirl ? '#f9a8d4' : '#faf6ee');
+  const clothingMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: clothingColor, roughness: 0.6 }),
+    [clothingColor]
   );
+
+  // Clothing Materials - Boy
   const denimJeansMat = useMemo(
     () => new THREE.MeshStandardMaterial({ color: '#1e3050', roughness: 0.7 }),
     []
@@ -97,10 +100,6 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
   const darkDetailMat = useMemo(() => new THREE.MeshBasicMaterial({ color: '#261208' }), []);
 
   // Clothing Materials - Girl
-  const sweaterPinkMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#f9a8d4', roughness: 0.55 }),
-    []
-  );
   const ribbonBowPinkMat = useMemo(
     () => new THREE.MeshStandardMaterial({ color: '#f472b6', roughness: 0.35 }),
     []
@@ -488,18 +487,18 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
       {/* ------------------------------------------------------------- */}
       <group ref={bodyRef} position={[0, 0.6, 0]}>
         {!isGirl ? (
-          // ==================== BOY: OVERSIZED CREAM TEDDY HOODIE ====================
+          // ==================== BOY: OVERSIZED HOODIE ====================
           <group>
             {/* Main Hoodie Body */}
-            <mesh material={hoodieCreamMat} castShadow>
+            <mesh material={clothingMat} castShadow>
               <cylinderGeometry args={[0.27, 0.31, 0.56, 32]} />
             </mesh>
             {/* Ribbed Bottom Hem */}
-            <mesh material={hoodieCreamMat} position={[0, -0.27, 0]}>
+            <mesh material={clothingMat} position={[0, -0.27, 0]}>
               <cylinderGeometry args={[0.315, 0.315, 0.06, 32]} />
             </mesh>
             {/* Resting Hood on Back Collar */}
-            <mesh material={hoodieCreamMat} position={[0, 0.24, -0.2]} rotation={[-0.3, 0, 0]}>
+            <mesh material={clothingMat} position={[0, 0.24, -0.2]} rotation={[-0.3, 0, 0]}>
               <torusGeometry args={[0.18, 0.07, 8, 24, Math.PI * 1.2]} />
             </mesh>
 
@@ -510,18 +509,18 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
             {renderTeddyPatch(true)}
           </group>
         ) : (
-          // ==================== GIRL: SWEET PASTEL PINK SWEATER + WHITE CHEST BOW ====================
+          // ==================== GIRL: SWEATER + WHITE CHEST BOW ====================
           <group>
             {/* Sweater Body */}
-            <mesh material={sweaterPinkMat} castShadow>
+            <mesh material={clothingMat} castShadow>
               <cylinderGeometry args={[0.25, 0.29, 0.52, 32]} />
             </mesh>
             {/* Ribbed Hem */}
-            <mesh material={sweaterPinkMat} position={[0, -0.25, 0]}>
+            <mesh material={clothingMat} position={[0, -0.25, 0]}>
               <cylinderGeometry args={[0.295, 0.295, 0.05, 32]} />
             </mesh>
             {/* Collar Trim */}
-            <mesh material={sweaterPinkMat} position={[0, 0.26, 0]}>
+            <mesh material={clothingMat} position={[0, 0.26, 0]}>
               <torusGeometry args={[0.18, 0.045, 8, 24]} />
             </mesh>
 
@@ -560,7 +559,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
       {/* Left Arm */}
       <mesh
         ref={leftArmRef}
-        material={isGirl ? sweaterPinkMat : hoodieCreamMat}
+        material={clothingMat}
         position={[-0.37, 0.65, 0]}
         castShadow
       >
@@ -569,7 +568,7 @@ export const StylizedAvatar: React.FC<StylizedAvatarProps> = ({
       {/* Right Arm */}
       <mesh
         ref={rightArmRef}
-        material={isGirl ? sweaterPinkMat : hoodieCreamMat}
+        material={clothingMat}
         position={[0.37, 0.65, 0]}
         castShadow
       >
