@@ -192,33 +192,41 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
 
   const keyPos = LAMPPOST_POSITIONS[quest.keyLamppostIndex] || LAMPPOST_POSITIONS[6];
 
-  // Memoized materials
+  // Memoized materials for Daytime Street Scene
   const cobblestoneMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#1e1b2e', roughness: 0.85, metalness: 0.1 }),
+    () => new THREE.MeshStandardMaterial({ color: '#8b9bb4', roughness: 0.8, metalness: 0.05 }),
     []
   );
   const sidewalkMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#2b2342', roughness: 0.8, metalness: 0.15 }),
+    () => new THREE.MeshStandardMaterial({ color: '#94a3b8', roughness: 0.75, metalness: 0.05 }),
+    []
+  );
+  const grassMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: '#15803d', roughness: 0.85 }),
+    []
+  );
+  const mahoganyDoorMat = useMemo(
+    () => new THREE.MeshStandardMaterial({ color: '#2d140e', roughness: 0.45, metalness: 0.05 }),
     []
   );
   const curbMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#3d315b', roughness: 0.7, metalness: 0.2 }),
+    () => new THREE.MeshStandardMaterial({ color: '#64748b', roughness: 0.7, metalness: 0.1 }),
     []
   );
   const brickMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#4a2530', roughness: 0.8 }),
+    () => new THREE.MeshStandardMaterial({ color: '#c2410c', roughness: 0.75 }),
     []
   );
   const woodBenchMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#6d3c19', roughness: 0.6 }),
+    () => new THREE.MeshStandardMaterial({ color: '#9a3412', roughness: 0.6 }),
     []
   );
   const ironMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#0f172a', metalness: 0.85, roughness: 0.3 }),
+    () => new THREE.MeshStandardMaterial({ color: '#334155', metalness: 0.8, roughness: 0.3 }),
     []
   );
   const redCarpetMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: '#be123c', roughness: 0.75 }),
+    () => new THREE.MeshStandardMaterial({ color: '#e11d48', roughness: 0.7 }),
     []
   );
   const goldBrassMat = useMemo(
@@ -228,6 +236,27 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
 
   return (
     <group>
+      {/* =========================================================================
+          DAYTIME NATURAL SUNLIGHT & BLUE SKY (Street Area Only, Z >= 11)
+         ========================================================================= */}
+      {/* Warm Golden Sunlight */}
+      <directionalLight position={[18, 35, 30]} intensity={2.6} color="#fffbeb" />
+      {/* Daylight Sky to Ground Ambient Bounce */}
+      <hemisphereLight args={['#7dd3fc', '#fed7aa', 1.3]} />
+      <ambientLight intensity={0.9} color="#ffffff" />
+
+      {/* Atmospheric Day Sky Dome */}
+      <mesh position={[0, 15, 38]}>
+        <sphereGeometry args={[48, 24, 24, 0, Math.PI * 2, 0, Math.PI * 0.55]} />
+        <meshBasicMaterial color="#38bdf8" side={THREE.BackSide} />
+      </mesh>
+
+      {/* Sunny Distant Horizon Plane at end of street (Z = 66) */}
+      <mesh position={[0, 12, 66]}>
+        <planeGeometry args={[65, 26]} />
+        <meshBasicMaterial color="#7dd3fc" />
+      </mesh>
+
       {/* =========================================================================
           1. EXTENDED COBBLESTONE RUNWAY & ELEVATED SIDEWALKS (Z: 11 to 65)
          ========================================================================= */}
@@ -269,6 +298,18 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
       <mesh position={[3.85, 0.08, 38.0]}>
         <boxGeometry args={[0.2, 0.16, 54]} />
         <primitive object={curbMat} />
+      </mesh>
+
+      {/* Left Lush Green Grass Lawn (under trees, planters & outward) */}
+      <mesh position={[-9.8, 0.01, 38.0]} receiveShadow>
+        <boxGeometry args={[8.0, 0.06, 56]} />
+        <primitive object={grassMat} />
+      </mesh>
+
+      {/* Right Lush Green Grass Lawn */}
+      <mesh position={[9.8, 0.01, 38.0]} receiveShadow>
+        <boxGeometry args={[8.0, 0.06, 56]} />
+        <primitive object={grassMat} />
       </mesh>
 
       {/* =========================================================================
@@ -585,18 +626,29 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
       {/* =========================================================================
           3. GRAND ART-DECO THEATRE FAÇADE & ILLUMINATED NEON MARQUEE
          ========================================================================= */}
-      {/* Front Exterior Façade Wall */}
-      <mesh position={[0, 5.5, 10.9]} receiveShadow>
-        <boxGeometry args={[19, 11, 0.6]} />
-        <meshStandardMaterial color="#2d1d3d" roughness={0.75} />
+      {/* Front Exterior Façade Walls with Cutout Doorway Opening (Z: 10.9) */}
+      {/* Left Wall Wing */}
+      <mesh position={[-6.2, 5.5, 10.9]} receiveShadow>
+        <boxGeometry args={[6.6, 11, 0.6]} />
+        <meshStandardMaterial color="#9a3412" roughness={0.75} />
+      </mesh>
+      {/* Right Wall Wing */}
+      <mesh position={[6.2, 5.5, 10.9]} receiveShadow>
+        <boxGeometry args={[6.6, 11, 0.6]} />
+        <meshStandardMaterial color="#9a3412" roughness={0.75} />
+      </mesh>
+      {/* Top Header Wall above Doorway Opening */}
+      <mesh position={[0, 8.0, 10.9]} receiveShadow>
+        <boxGeometry args={[5.8, 6.0, 0.6]} />
+        <meshStandardMaterial color="#9a3412" roughness={0.75} />
       </mesh>
 
-      {/* Two-Story Pilasters & Columns framing entrance */}
+      {/* Two-Story Pilasters & Columns framing entrance (Carved Sandstone) */}
       {[-4.2, 4.2].map((xCol, idx) => (
         <group key={`pillar-${idx}`} position={[xCol, 5.0, 11.25]}>
           <mesh>
             <boxGeometry args={[1.2, 10, 0.5]} />
-            <meshStandardMaterial color="#3f2654" roughness={0.6} />
+            <meshStandardMaterial color="#d4c4b5" roughness={0.6} />
           </mesh>
           <mesh position={[0, 4.8, 0.1]}>
             <boxGeometry args={[1.4, 0.5, 0.7]} />
@@ -737,58 +789,323 @@ export const OutdoorStreetScene: React.FC<OutdoorStreetSceneProps> = ({
       </group>
 
       {/* =========================================================================
-          4. GOLDEN DOUBLE DOORS & CO-OP KEYHOLE
+          4. ARCHITECTURAL LUXURY CINEMA DOUBLE DOORS & CO-OP KEYHOLE
          ========================================================================= */}
-      {/* Outer Door Frame */}
-      <mesh position={[0, 2.35, 11.0]}>
-        <boxGeometry args={[2.9, 4.4, 0.25]} />
-        <primitive object={goldBrassMat} />
-      </mesh>
-
-      {/* Left Golden Door */}
-      <group ref={leftDoorRef} position={[-1.3, 2.3, 11.0]}>
-        <mesh position={[0.65, 0, 0]} castShadow>
-          <boxGeometry args={[1.3, 4.1, 0.08]} />
+      {/* Outer Door Frame & Stepped Architrave (Grand Portal at Z = 11.22) */}
+      <group position={[0, 2.35, 11.22]}>
+        {/* Deep Mahogany Recessed Portal Jamb */}
+        <mesh>
+          <boxGeometry args={[2.96, 4.46, 0.28]} />
+          <meshStandardMaterial color="#240f09" roughness={0.6} />
+        </mesh>
+        {/* Stepped Gold Brass Outer Molding Trim */}
+        <mesh position={[0, 0, 0.04]}>
+          <boxGeometry args={[3.08, 4.56, 0.22]} />
           <primitive object={goldBrassMat} />
         </mesh>
-        {/* Glass Panels */}
-        <mesh position={[0.65, 0.5, 0.05]}>
-          <planeGeometry args={[0.9, 2.2]} />
-          <meshStandardMaterial color="#fef08a" opacity={0.65} transparent roughness={0.1} />
-        </mesh>
-        {/* Handle */}
-        <mesh position={[1.15, -0.1, 0.08]}>
-          <cylinderGeometry args={[0.03, 0.03, 0.6, 8]} />
-          <meshStandardMaterial color="#ffffff" metalness={0.9} />
+        {/* Top Header Transom Bar */}
+        <mesh position={[0, 2.12, 0.12]}>
+          <boxGeometry args={[2.88, 0.18, 0.08]} />
+          <primitive object={goldBrassMat} />
         </mesh>
       </group>
 
-      {/* Right Golden Door */}
-      <group ref={rightDoorRef} position={[1.3, 2.3, 11.0]}>
-        <mesh position={[-0.65, 0, 0]} castShadow>
-          <boxGeometry args={[1.3, 4.1, 0.08]} />
-          <primitive object={goldBrassMat} />
-        </mesh>
-        {/* Glass Panels */}
-        <mesh position={[-0.65, 0.5, 0.05]}>
-          <planeGeometry args={[0.9, 2.2]} />
-          <meshStandardMaterial color="#fef08a" opacity={0.65} transparent roughness={0.1} />
-        </mesh>
-        {/* Handle */}
-        <mesh position={[-1.15, -0.1, 0.08]}>
-          <cylinderGeometry args={[0.03, 0.03, 0.6, 8]} />
-          <meshStandardMaterial color="#ffffff" metalness={0.9} />
+      {/* LEFT MAHOGANY DOOR (Stile & Rail, Amber Glowing Glass, Brass Mullions & Handle) */}
+      <group ref={leftDoorRef} position={[-1.3, 2.3, 11.22]}>
+        {/* Main Solid Mahogany Door Base Slab */}
+        <mesh position={[0.65, 0, 0]} castShadow>
+          <boxGeometry args={[1.28, 4.1, 0.08]} />
+          <meshStandardMaterial color="#35160e" roughness={0.5} />
         </mesh>
 
-        {/* Glowing Keyhole on Right Door */}
-        <group position={[-1.15, -0.5, 0.05]}>
+        {/* --- Stile & Rail Outer Molding Framing --- */}
+        {/* Left Stile (Hinge side) */}
+        <mesh position={[0.1, 0, 0.045]}>
+          <boxGeometry args={[0.2, 4.1, 0.02]} />
+          <primitive object={mahoganyDoorMat} />
+        </mesh>
+        {/* Right Stile (Center meeting side) */}
+        <mesh position={[1.2, 0, 0.045]}>
+          <boxGeometry args={[0.16, 4.1, 0.02]} />
+          <primitive object={mahoganyDoorMat} />
+        </mesh>
+        {/* Top Rail */}
+        <mesh position={[0.65, 1.95, 0.045]}>
+          <boxGeometry args={[0.94, 0.22, 0.02]} />
+          <primitive object={mahoganyDoorMat} />
+        </mesh>
+        {/* Middle Lock Rail */}
+        <mesh position={[0.65, -0.15, 0.045]}>
+          <boxGeometry args={[0.94, 0.26, 0.02]} />
+          <primitive object={mahoganyDoorMat} />
+        </mesh>
+        {/* Bottom Rail */}
+        <mesh position={[0.65, -1.95, 0.045]}>
+          <boxGeometry args={[0.94, 0.22, 0.02]} />
+          <primitive object={mahoganyDoorMat} />
+        </mesh>
+
+        {/* --- Upper Glass Window Section --- */}
+        {/* Molded Gold Brass Window Casing */}
+        <mesh position={[0.65, 0.9, 0.048]}>
+          <boxGeometry args={[0.84, 1.84, 0.015]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        {/* Inner Dark Window Reveal */}
+        <mesh position={[0.65, 0.9, 0.049]}>
+          <boxGeometry args={[0.76, 1.76, 0.01]} />
+          <meshStandardMaterial color="#1a0805" roughness={0.8} />
+        </mesh>
+        {/* Glowing Amber Cinema Glass Pane (Illuminated from lobby) */}
+        <mesh position={[0.65, 0.9, 0.052]}>
+          <boxGeometry args={[0.72, 1.72, 0.005]} />
+          <meshStandardMaterial
+            color="#fef08a"
+            emissive="#f59e0b"
+            emissiveIntensity={0.8}
+            roughness={0.15}
+            metalness={0.1}
+          />
+        </mesh>
+        {/* Window Vertical Brass Mullion Bar */}
+        <mesh position={[0.65, 0.9, 0.058]}>
+          <boxGeometry args={[0.035, 1.72, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        {/* Window Horizontal Brass Mullion Crossbars */}
+        <mesh position={[0.65, 1.25, 0.058]}>
+          <boxGeometry args={[0.72, 0.035, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        <mesh position={[0.65, 0.55, 0.058]}>
+          <boxGeometry args={[0.72, 0.035, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+
+        {/* --- Lower Recessed Field Panel --- */}
+        {/* Brass Border Inlay */}
+        <mesh position={[0.65, -0.95, 0.048]}>
+          <boxGeometry args={[0.82, 1.32, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        {/* Raised Wood Center Panel */}
+        <mesh position={[0.65, -0.95, 0.052]}>
+          <boxGeometry args={[0.74, 1.24, 0.012]} />
+          <meshStandardMaterial color="#2d140e" roughness={0.4} />
+        </mesh>
+
+        {/* --- Heavy Polished Brass Kickplate --- */}
+        <mesh position={[0.65, -1.72, 0.06]}>
+          <boxGeometry args={[1.24, 0.52, 0.015]} />
+          <meshStandardMaterial color="#eab308" metalness={0.85} roughness={0.2} />
+        </mesh>
+        {/* Kickplate Top Beveled Lip */}
+        <mesh position={[0.65, -1.45, 0.065]}>
+          <boxGeometry args={[1.24, 0.03, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        {/* Kickplate Corner Rivet Accents */}
+        {[-0.56, 0.56].map((rx) =>
+          [-1.92, -1.52].map((ry) => (
+            <mesh key={`rivet-l-${rx}-${ry}`} position={[0.65 + rx, ry, 0.07]}>
+              <sphereGeometry args={[0.012, 8, 8]} />
+              <primitive object={goldBrassMat} />
+            </mesh>
+          ))
+        )}
+
+        {/* Center Meeting Astragal Strip */}
+        <mesh position={[1.27, 0, 0.055]}>
+          <boxGeometry args={[0.025, 4.08, 0.02]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+
+        {/* --- Luxury Architectural Vertical Pull Handle (Prominent Long Bar) --- */}
+        {/* Handle Main Tubular Bar */}
+        <mesh position={[1.15, -0.05, 0.16]}>
+          <cylinderGeometry args={[0.042, 0.042, 1.25, 16]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        {/* Center Knurled Grip Ring Accent */}
+        <mesh position={[1.15, -0.05, 0.162]}>
+          <cylinderGeometry args={[0.048, 0.048, 0.45, 16]} />
+          <meshStandardMaterial color="#ca8a04" metalness={0.9} roughness={0.25} />
+        </mesh>
+        {/* Top Handle Mounting Bracket & Rosette Base */}
+        <mesh position={[1.15, 0.45, 0.1]}>
+          <boxGeometry args={[0.06, 0.06, 0.12]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        <mesh position={[1.15, 0.45, 0.048]}>
+          <boxGeometry args={[0.1, 0.1, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        {/* Bottom Handle Mounting Bracket & Rosette Base */}
+        <mesh position={[1.15, -0.55, 0.1]}>
+          <boxGeometry args={[0.06, 0.06, 0.12]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        <mesh position={[1.15, -0.55, 0.048]}>
+          <boxGeometry args={[0.1, 0.1, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+      </group>
+
+      {/* RIGHT MAHOGANY DOOR (Stile & Rail, Amber Glowing Glass, Pull Handle & Co-op Keyhole) */}
+      <group ref={rightDoorRef} position={[1.3, 2.3, 11.22]}>
+        {/* Main Solid Mahogany Door Base Slab */}
+        <mesh position={[-0.65, 0, 0]} castShadow>
+          <boxGeometry args={[1.28, 4.1, 0.08]} />
+          <meshStandardMaterial color="#35160e" roughness={0.5} />
+        </mesh>
+
+        {/* --- Stile & Rail Outer Molding Framing --- */}
+        {/* Right Stile (Hinge side) */}
+        <mesh position={[-0.1, 0, 0.045]}>
+          <boxGeometry args={[0.2, 4.1, 0.02]} />
+          <primitive object={mahoganyDoorMat} />
+        </mesh>
+        {/* Left Stile (Center meeting side) */}
+        <mesh position={[-1.2, 0, 0.045]}>
+          <boxGeometry args={[0.16, 4.1, 0.02]} />
+          <primitive object={mahoganyDoorMat} />
+        </mesh>
+        {/* Top Rail */}
+        <mesh position={[-0.65, 1.95, 0.045]}>
+          <boxGeometry args={[0.94, 0.22, 0.02]} />
+          <primitive object={mahoganyDoorMat} />
+        </mesh>
+        {/* Middle Lock Rail */}
+        <mesh position={[-0.65, -0.15, 0.045]}>
+          <boxGeometry args={[0.94, 0.26, 0.02]} />
+          <primitive object={mahoganyDoorMat} />
+        </mesh>
+        {/* Bottom Rail */}
+        <mesh position={[-0.65, -1.95, 0.045]}>
+          <boxGeometry args={[0.94, 0.22, 0.02]} />
+          <primitive object={mahoganyDoorMat} />
+        </mesh>
+
+        {/* --- Upper Glass Window Section --- */}
+        {/* Molded Gold Brass Window Casing */}
+        <mesh position={[-0.65, 0.9, 0.048]}>
+          <boxGeometry args={[0.84, 1.84, 0.015]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        {/* Inner Dark Window Reveal */}
+        <mesh position={[-0.65, 0.9, 0.049]}>
+          <boxGeometry args={[0.76, 1.76, 0.01]} />
+          <meshStandardMaterial color="#1a0805" roughness={0.8} />
+        </mesh>
+        {/* Glowing Amber Cinema Glass Pane (Illuminated from lobby) */}
+        <mesh position={[-0.65, 0.9, 0.052]}>
+          <boxGeometry args={[0.72, 1.72, 0.005]} />
+          <meshStandardMaterial
+            color="#fef08a"
+            emissive="#f59e0b"
+            emissiveIntensity={0.8}
+            roughness={0.15}
+            metalness={0.1}
+          />
+        </mesh>
+        {/* Window Vertical Brass Mullion Bar */}
+        <mesh position={[-0.65, 0.9, 0.058]}>
+          <boxGeometry args={[0.035, 1.72, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        {/* Window Horizontal Brass Mullion Crossbars */}
+        <mesh position={[-0.65, 1.25, 0.058]}>
+          <boxGeometry args={[0.72, 0.035, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        <mesh position={[-0.65, 0.55, 0.058]}>
+          <boxGeometry args={[0.72, 0.035, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+
+        {/* --- Lower Recessed Field Panel --- */}
+        {/* Brass Border Inlay */}
+        <mesh position={[-0.65, -0.95, 0.048]}>
+          <boxGeometry args={[0.82, 1.32, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        {/* Raised Wood Center Panel */}
+        <mesh position={[-0.65, -0.95, 0.052]}>
+          <boxGeometry args={[0.74, 1.24, 0.012]} />
+          <meshStandardMaterial color="#2d140e" roughness={0.4} />
+        </mesh>
+
+        {/* --- Heavy Polished Brass Kickplate --- */}
+        <mesh position={[-0.65, -1.72, 0.06]}>
+          <boxGeometry args={[1.24, 0.52, 0.015]} />
+          <meshStandardMaterial color="#eab308" metalness={0.85} roughness={0.2} />
+        </mesh>
+        {/* Kickplate Top Beveled Lip */}
+        <mesh position={[-0.65, -1.45, 0.065]}>
+          <boxGeometry args={[1.24, 0.03, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        {/* Kickplate Corner Rivet Accents */}
+        {[-0.56, 0.56].map((rx) =>
+          [-1.92, -1.52].map((ry) => (
+            <mesh key={`rivet-r-${rx}-${ry}`} position={[-0.65 + rx, ry, 0.07]}>
+              <sphereGeometry args={[0.012, 8, 8]} />
+              <primitive object={goldBrassMat} />
+            </mesh>
+          ))
+        )}
+
+        {/* Center Meeting Astragal Strip */}
+        <mesh position={[-1.27, 0, 0.055]}>
+          <boxGeometry args={[0.025, 4.08, 0.02]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+
+        {/* --- Luxury Architectural Vertical Pull Handle (Prominent Long Bar) --- */}
+        {/* Handle Main Tubular Bar */}
+        <mesh position={[-1.15, -0.05, 0.16]}>
+          <cylinderGeometry args={[0.042, 0.042, 1.25, 16]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        {/* Center Knurled Grip Ring Accent */}
+        <mesh position={[-1.15, -0.05, 0.162]}>
+          <cylinderGeometry args={[0.048, 0.048, 0.45, 16]} />
+          <meshStandardMaterial color="#ca8a04" metalness={0.9} roughness={0.25} />
+        </mesh>
+        {/* Top Handle Mounting Bracket & Rosette Base */}
+        <mesh position={[-1.15, 0.45, 0.1]}>
+          <boxGeometry args={[0.06, 0.06, 0.12]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        <mesh position={[-1.15, 0.45, 0.048]}>
+          <boxGeometry args={[0.1, 0.1, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        {/* Bottom Handle Mounting Bracket & Rosette Base */}
+        <mesh position={[-1.15, -0.55, 0.1]}>
+          <boxGeometry args={[0.06, 0.06, 0.12]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+        <mesh position={[-1.15, -0.55, 0.048]}>
+          <boxGeometry args={[0.1, 0.1, 0.01]} />
+          <primitive object={goldBrassMat} />
+        </mesh>
+
+        {/* --- Glowing Keyhole on Right Door --- */}
+        <group position={[-1.14, -0.74, 0.055]}>
+          {/* Keyhole Escutcheon Brass Plate */}
           <mesh>
-            <circleGeometry args={[0.09, 16]} />
+            <boxGeometry args={[0.12, 0.22, 0.018]} />
+            <primitive object={goldBrassMat} />
+          </mesh>
+          {/* Keyhole Aperture */}
+          <mesh position={[0, 0, 0.012]}>
+            <circleGeometry args={[0.04, 16]} />
             <meshStandardMaterial color="#020617" metalness={0.95} />
           </mesh>
           {isPlateActive && !isDoorUnlocked && (
-            <mesh position={[0, 0, 0.01]}>
-              <ringGeometry args={[0.09, 0.16, 16]} />
+            <mesh position={[0, 0, 0.018]}>
+              <ringGeometry args={[0.05, 0.12, 16]} />
               <meshBasicMaterial color="#fde047" />
             </mesh>
           )}
