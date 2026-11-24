@@ -220,6 +220,11 @@ class RoomService {
       return { success: false, error: 'ROOM_CLOSED' };
     }
 
+    if (room.disconnectTimeout) {
+      clearTimeout(room.disconnectTimeout);
+      room.disconnectTimeout = null;
+    }
+
     // Check if this player is already in the room (reconnecting)
     const existingPlayer = room.players.get(guestData.playerId);
     if (existingPlayer) {
@@ -369,6 +374,13 @@ class RoomService {
       console.warn('[RoomService] Supabase updateMemberLastSeen warning:', err.message);
     }
 
+    // Cancel any active disconnect grace period timeout
+    if (room.disconnectTimeout) {
+      console.log(`[RoomService] Player reconnected to room ${normalizedCode}. Cancelling disconnect grace timeout.`);
+      clearTimeout(room.disconnectTimeout);
+      room.disconnectTimeout = null;
+    }
+
     return { success: true, room, player };
   }
 
@@ -515,15 +527,34 @@ class RoomService {
     }
 
     if (remainingConnected === 0) {
-      // Both disconnected - purge R2 movie storage immediately and close room
-      room.state = 'CLOSED';
-      movieService.deleteMovieByRoom(roomCode).catch((err) =>
-        console.error('[RoomService] deleteMovieByRoom error:', err.message)
-      );
-      supabaseService.closeRoom(roomCode).catch((err) =>
-        console.error('[RoomService] Supabase closeRoom error:', err.message)
-      );
-      return { roomCode, player, remainingConnected: 0, roomClosed: true };
+      // Both disconnected - do NOT purge immediately! Allow a 60-second grace period for temporary socket drops / page reloads.
+      if (!room.disconnectTimeout) {
+        console.log(`[RoomService] All players disconnected from room ${roomCode}. Starting 60s reconnect grace period before cleanup...`);
+        room.disconnectTimeout = setTimeout(() => {
+          const currentRoom = this.rooms.get(roomCode);
+          if (!currentRoom) return;
+
+          let stillAnyConnected = false;
+          for (const p of currentRoom.players.values()) {
+            if (p.connected) {
+              stillAnyConnected = true;
+              break;
+            }
+          }
+
+          if (!stillAnyConnected) {
+            console.log(`[RoomService] Grace period expired for room ${roomCode}. Closing room and purging R2 movie storage.`);
+            currentRoom.state = 'CLOSED';
+            movieService.deleteMovieByRoom(roomCode).catch((err) =>
+              console.error('[RoomService] deleteMovieByRoom error:', err.message)
+            );
+            supabaseService.closeRoom(roomCode).catch((err) =>
+              console.error('[RoomService] Supabase closeRoom error:', err.message)
+            );
+          }
+        }, 60000);
+      }
+      return { roomCode, player, remainingConnected: 0, roomClosed: false };
     }
 
     return { roomCode, player, remainingConnected, roomClosed: false };

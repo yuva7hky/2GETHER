@@ -238,8 +238,8 @@ class UploadService {
       const { uploadId, key, totalParts, partUrls, chunkSize } = initData;
       this.activeSession = { roomCode, key, uploadId };
 
-      // 2. High-Speed Concurrent Upload Pool (4 concurrent chunks)
-      const CONCURRENCY = Math.min(4, totalParts);
+      // 2. High-Speed Concurrent Upload Pool (balanced at 3 parallel chunks to prevent network socket starvation)
+      const CONCURRENCY = Math.min(3, totalParts);
       const partQueue = Array.from({ length: totalParts }, (_, i) => i + 1);
       const completedParts: Array<{ PartNumber: number; ETag: string }> = [];
 

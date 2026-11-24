@@ -83,4 +83,5 @@ export interface RoomSession {
   quest: TheatreQuestState;
   createdAt: number;
   lastActiveAt: number;
+  disconnectTimeout?: NodeJS.Timeout | null;
 }

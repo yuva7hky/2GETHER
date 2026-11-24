@@ -48,22 +48,48 @@ class SocketService {
       useAppStore.getState().setConnected(true);
 
       // Handle Automatic Reconnection to an active room
-      const { roomCode, localPlayer, profile } = useAppStore.getState();
-      if (roomCode && localPlayer) {
-        console.log('[SocketService] Automatically re-establishing session in room:', roomCode);
+      const state = useAppStore.getState();
+      const savedRoom = typeof window !== 'undefined' ? sessionStorage.getItem('2gether_active_room') : null;
+      const savedPlayerId = typeof window !== 'undefined' ? sessionStorage.getItem('2gether_player_id') : null;
+
+      const targetRoom = state.roomCode || savedRoom;
+      const targetPlayerId = state.localPlayer?.playerId || savedPlayerId;
+
+      if (targetRoom && targetPlayerId) {
+        console.log('[SocketService] Automatically re-establishing session in room:', targetRoom);
         this.socket?.emit(
           'room:reconnect',
-          { roomCode, playerId: localPlayer.playerId },
+          { roomCode: targetRoom, playerId: targetPlayerId },
           (res: any) => {
             if (res?.success) {
-              const other = res.room.players.find((p: RoomPlayer) => p.playerId !== localPlayer.playerId);
+              const other = res.room.players.find((p: RoomPlayer) => p.playerId !== targetPlayerId);
               useAppStore.getState().setRoomData({
                 roomCode: res.room.roomCode,
                 roomState: res.room.state,
                 isHost: res.player.isHost,
                 localPlayer: res.player,
                 otherPlayer: other || null,
+                quest: res.room.quest,
               });
+
+              if (res.room.movie) {
+                useAppStore.getState().setMovie(res.room.movie);
+              }
+              if (res.room.syncState) {
+                useAppStore.getState().setMovieSync(res.room.syncState);
+              }
+
+              // Preserve 3D Theatre view if already entered
+              const curView = useAppStore.getState().currentView;
+              if (curView === 'DASHBOARD' || curView === 'LANDING' || res.room.state === 'IN_THEATRE') {
+                useAppStore.getState().setView('THEATRE');
+              }
+            } else {
+              console.warn('[SocketService] Reconnect session rejected:', res?.error);
+              if (typeof window !== 'undefined') {
+                sessionStorage.removeItem('2gether_active_room');
+                sessionStorage.removeItem('2gether_player_id');
+              }
             }
           }
         );

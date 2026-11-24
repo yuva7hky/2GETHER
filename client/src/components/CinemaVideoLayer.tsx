@@ -91,7 +91,7 @@ export const CinemaVideoLayer: React.FC = () => {
       }
     }
 
-    // Micro-drift rate adjustment for seamless lock without hard-seeking or buffering
+    // Natural audio-first sync: strictly preserve 100% natural voice pitch and tempo (1.0x)
     if (!isHost && Number.isFinite(targetTime) && targetTime > 0) {
       const now = Date.now();
       const packetAge = state.syncState.timestamp
@@ -100,21 +100,13 @@ export const CinemaVideoLayer: React.FC = () => {
       const effectiveHostTime = targetTime + packetAge;
       const drift = video.currentTime - effectiveHostTime;
 
-      // Hard seek ONLY if massively desynchronized (> 3.0s)
-      if (Math.abs(drift) > 3.0) {
+      // Always maintain 1.0x playback rate so voice pitch and speed never distort
+      video.playbackRate = 1.0;
+
+      // Soft align only if noticeably desynchronized (> 1.8s)
+      if (Math.abs(drift) > 1.8) {
         video.currentTime = effectiveHostTime;
-        video.playbackRate = 1.0;
-      } else if (drift > 0.25) {
-        // Slightly ahead: ease back gently without stopping video decoding
-        video.playbackRate = 0.95;
-      } else if (drift < -0.25) {
-        // Slightly behind: speed up gently without stopping video decoding
-        video.playbackRate = 1.05;
-      } else {
-        // Within 250ms: perfectly synced
-        video.playbackRate = 1.0;
       }
-      (video as any).preservesPitch = true;
     } else {
       video.playbackRate = 1.0;
     }

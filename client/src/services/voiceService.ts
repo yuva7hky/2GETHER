@@ -161,7 +161,7 @@ class VoiceService {
           sum += buffer[i];
         }
         const average = sum / buffer.length;
-        const speakingNow = average > 18; // Voice threshold
+        const speakingNow = average > 32; // Intentional voice threshold (ignores ambient fan / room hum)
 
         if (speakingNow !== this.isCurrentlySpeaking) {
           this.setSpeaking(speakingNow);
@@ -196,7 +196,7 @@ class VoiceService {
     if (anyoneSpeaking && !this.isDucked) {
       this.isDucked = true;
       this.originalMovieVolume = activeVideoElement.volume;
-      activeVideoElement.volume = Math.max(0.2, this.originalMovieVolume * 0.45);
+      activeVideoElement.volume = Math.max(0.4, this.originalMovieVolume * 0.75);
     } else if (!anyoneSpeaking && this.isDucked) {
       this.isDucked = false;
       activeVideoElement.volume = this.originalMovieVolume;

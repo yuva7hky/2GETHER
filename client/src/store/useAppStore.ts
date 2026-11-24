@@ -171,8 +171,14 @@ export const useAppStore = create<AppStore>((set) => ({
   connected: false,
   localPlayer: null,
   otherPlayer: null,
-  setRoomData: ({ roomCode, roomState, isHost, localPlayer, otherPlayer, quest }) =>
-    set((state) => ({
+  setRoomData: ({ roomCode, roomState, isHost, localPlayer, otherPlayer, quest }) => {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.setItem('2gether_active_room', roomCode);
+        sessionStorage.setItem('2gether_player_id', localPlayer.playerId);
+      } catch (_) {}
+    }
+    return set((state) => ({
       roomCode,
       roomState,
       isHost,
@@ -184,7 +190,8 @@ export const useAppStore = create<AppStore>((set) => ({
       seatIndex: localPlayer.seatIndex ?? null,
       connected: true,
       quest: quest || state.quest,
-    })),
+    }));
+  },
   setOtherPlayer: (otherPlayer) => set({ otherPlayer }),
   updateOtherPlayerTransform: (data) =>
     set((state) => {
@@ -248,8 +255,14 @@ export const useAppStore = create<AppStore>((set) => ({
     }),
   setRoomState: (roomState) => set({ roomState }),
   setConnected: (connected) => set({ connected }),
-  leaveRoom: () =>
-    set({
+  leaveRoom: () => {
+    if (typeof window !== 'undefined') {
+      try {
+        sessionStorage.removeItem('2gether_active_room');
+        sessionStorage.removeItem('2gether_player_id');
+      } catch (_) {}
+    }
+    return set({
       roomCode: null,
       roomState: 'WAITING',
       isHost: false,
@@ -258,7 +271,8 @@ export const useAppStore = create<AppStore>((set) => ({
       currentView: 'DASHBOARD',
       messages: [],
       currentMovie: null,
-    }),
+    });
+  },
 
   // Movement & Sitting (Initial placeholder before server assigns authoritative spawn)
   localTransform: { x: -1.5, y: 0, z: 22.0, rotY: Math.PI },

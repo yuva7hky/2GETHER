@@ -381,24 +381,7 @@ export function setupSocketHandler(io: Server): void {
           remainingConnected,
         });
 
-        // If host disconnected or room closed, purge R2 movie storage after brief 10s grace period
-        if (player.isHost || roomClosed || remainingConnected === 0) {
-          setTimeout(async () => {
-            const currentRoom = roomService.getRoom(roomCode);
-            let anyHostConnected = false;
-            if (currentRoom) {
-              for (const p of currentRoom.players.values()) {
-                if (p.isHost && p.connected) anyHostConnected = true;
-              }
-            }
-            if (!anyHostConnected || !currentRoom) {
-              console.log(`[Socket] Host disconnected, purging R2 movie storage for room ${roomCode}`);
-              movieService.deleteMovieByRoom(roomCode).catch((err) =>
-                console.error('[Socket] Host disconnect R2 cleanup error:', err.message)
-              );
-            }
-          }, 10000);
-        }
+        // Disconnect grace period (60s) and cleanup is authoritatively handled by roomService.handleDisconnect
       }
     });
   });
