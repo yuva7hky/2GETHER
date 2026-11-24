@@ -52,6 +52,8 @@ export const MoviePlayerOverlay: React.FC<MoviePlayerOverlayProps> = ({ isOpen, 
     if (!currentMovie) return;
     const nextAction = isPlaying ? 'PAUSE' : 'PLAY';
     const vid = useAppStore.getState().activeVideoElement;
+    const curTime = vid ? vid.currentTime : movieTime;
+
     if (vid) {
       if (nextAction === 'PLAY') {
         vid.muted = false;
@@ -60,14 +62,18 @@ export const MoviePlayerOverlay: React.FC<MoviePlayerOverlayProps> = ({ isOpen, 
         vid.pause();
       }
     }
-    setMovieSync({ action: nextAction });
-    socketService.sendMovieSync(nextAction, movieTime, currentMovie.playbackUrl);
+    setMovieSync({ action: nextAction, currentTime: curTime });
+    socketService.sendMovieSync(nextAction, curTime, currentMovie.playbackUrl);
   };
 
   const handleSeek = (newTime: number) => {
     if (!currentMovie) return;
     const clampedTime = Math.max(0, Math.min(newTime, movieDuration || newTime));
-    setMovieSync({ currentTime: clampedTime });
+    const vid = useAppStore.getState().activeVideoElement;
+    if (vid) {
+      vid.currentTime = clampedTime;
+    }
+    setMovieSync({ action: 'SEEK', currentTime: clampedTime });
     socketService.sendMovieSync('SEEK', clampedTime, currentMovie.playbackUrl);
   };
 

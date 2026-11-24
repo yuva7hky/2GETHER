@@ -56,14 +56,32 @@ export const CinemaVideoLayer: React.FC = () => {
     if (!video) return;
 
     const state = useAppStore.getState();
+    const action = state.syncState.action || (state.isPlaying ? 'PLAY' : 'PAUSE');
     const targetTime = state.syncState.currentTime;
 
-    if (Number.isFinite(targetTime) && Math.abs(video.currentTime - targetTime) > 0.35) {
-      video.currentTime = Math.max(0, targetTime);
+    // Handle PAUSE: freeze at current position, never reset to 0
+    if (action === 'PAUSE' || !state.isPlaying) {
+      if (!video.paused) {
+        video.pause();
+      }
+      video.playbackRate = 1.0;
+      if (Number.isFinite(targetTime) && Math.abs(video.currentTime - targetTime) > 0.5) {
+        video.currentTime = targetTime;
+      }
+      return;
     }
 
-    if (state.isPlaying) {
-      // Socket-driven playback remains muted until a user gesture unlocks audio.
+    // Handle explicit SEEK: jump to timestamp immediately
+    if (action === 'SEEK') {
+      if (Number.isFinite(targetTime) && Math.abs(video.currentTime - targetTime) > 0.25) {
+        video.currentTime = targetTime;
+      }
+      video.playbackRate = 1.0;
+      return;
+    }
+
+    // Handle PLAY: resume playback if paused
+    if (video.paused && state.isPlaying) {
       const p = video.play();
       if (p !== undefined) {
         p.catch(() => {
@@ -71,8 +89,34 @@ export const CinemaVideoLayer: React.FC = () => {
           video.play().catch(() => {});
         });
       }
+    }
+
+    // Micro-drift rate adjustment for seamless lock without hard-seeking or buffering
+    if (!isHost && Number.isFinite(targetTime) && targetTime > 0) {
+      const now = Date.now();
+      const packetAge = state.syncState.timestamp
+        ? Math.max(0, Math.min(0.5, (now - state.syncState.timestamp) / 1000))
+        : 0;
+      const effectiveHostTime = targetTime + packetAge;
+      const drift = video.currentTime - effectiveHostTime;
+
+      // Hard seek ONLY if massively desynchronized (> 3.0s)
+      if (Math.abs(drift) > 3.0) {
+        video.currentTime = effectiveHostTime;
+        video.playbackRate = 1.0;
+      } else if (drift > 0.25) {
+        // Slightly ahead: ease back gently without stopping video decoding
+        video.playbackRate = 0.95;
+      } else if (drift < -0.25) {
+        // Slightly behind: speed up gently without stopping video decoding
+        video.playbackRate = 1.05;
+      } else {
+        // Within 250ms: perfectly synced
+        video.playbackRate = 1.0;
+      }
+      (video as any).preservesPitch = true;
     } else {
-      video.pause();
+      video.playbackRate = 1.0;
     }
   };
 

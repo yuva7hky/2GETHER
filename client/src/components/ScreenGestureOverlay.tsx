@@ -136,18 +136,23 @@ export const ScreenGestureOverlay: React.FC = () => {
     const timeSinceLastTap = now - lastTapRef.current.time;
 
     // Check for DOUBLE TAP (< 300ms in same zone)
+    const vid = useAppStore.getState().activeVideoElement;
+    const curTime = vid ? vid.currentTime : movieTime;
+
     if (timeSinceLastTap < 300 && lastTapRef.current.zone === zone) {
       if (zone === 'LEFT') {
         // Double Tap Left: Rewind 10 seconds
-        const newTime = Math.max(0, movieTime - 10);
-        setMovieSync({ currentTime: newTime });
+        const newTime = Math.max(0, curTime - 10);
+        if (vid) vid.currentTime = newTime;
+        setMovieSync({ action: 'SEEK', currentTime: newTime });
         socketService.sendMovieSync('SEEK', newTime, currentMovie.playbackUrl);
         triggerFeedback('REWIND');
       } else if (zone === 'RIGHT') {
         // Double Tap Right: Forward 10 seconds
-        const maxDuration = movieDuration || movieTime + 10;
-        const newTime = Math.min(maxDuration, movieTime + 10);
-        setMovieSync({ currentTime: newTime });
+        const maxDuration = movieDuration || curTime + 10;
+        const newTime = Math.min(maxDuration, curTime + 10);
+        if (vid) vid.currentTime = newTime;
+        setMovieSync({ action: 'SEEK', currentTime: newTime });
         socketService.sendMovieSync('SEEK', newTime, currentMovie.playbackUrl);
         triggerFeedback('FORWARD');
       } else if (zone === 'CENTER') {
@@ -169,6 +174,8 @@ export const ScreenGestureOverlay: React.FC = () => {
   const togglePlay = () => {
     const nextAction = isPlaying ? 'PAUSE' : 'PLAY';
     const vid = useAppStore.getState().activeVideoElement;
+    const curTime = vid ? vid.currentTime : movieTime;
+
     if (vid) {
       if (nextAction === 'PLAY') {
         vid.muted = false;
@@ -177,14 +184,18 @@ export const ScreenGestureOverlay: React.FC = () => {
         vid.pause();
       }
     }
-    setMovieSync({ action: nextAction });
-    socketService.sendMovieSync(nextAction, movieTime, currentMovie.playbackUrl);
+    setMovieSync({ action: nextAction, currentTime: curTime });
+    socketService.sendMovieSync(nextAction, curTime, currentMovie.playbackUrl);
     triggerFeedback(nextAction);
   };
 
   const handleScrub = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newTime = parseFloat(e.target.value);
-    setMovieSync({ currentTime: newTime });
+    const vid = useAppStore.getState().activeVideoElement;
+    if (vid) {
+      vid.currentTime = newTime;
+    }
+    setMovieSync({ action: 'SEEK', currentTime: newTime });
     socketService.sendMovieSync('SEEK', newTime, currentMovie.playbackUrl);
     showControlsTemporarily();
   };
