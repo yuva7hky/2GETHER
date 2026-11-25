@@ -163,9 +163,13 @@ export const ScreenGestureOverlay: React.FC = () => {
       return;
     }
 
-    // SINGLE TAP in Center Zone: Toggle Play / Pause
+    // SINGLE TAP in Center Zone: Toggle Play / Pause only when controls are already visible, otherwise reveal controls
     if (zone === 'CENTER' && timeSinceLastTap > 300) {
-      togglePlay();
+      if (controlsVisible) {
+        togglePlay();
+      } else {
+        showControlsTemporarily();
+      }
     }
 
     lastTapRef.current = { time: now, x: e.clientX, zone };

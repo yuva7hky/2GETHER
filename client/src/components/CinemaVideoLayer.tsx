@@ -6,6 +6,7 @@ import { apiUrl } from '../services/apiConfig';
 export const CinemaVideoLayer: React.FC = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const lastSeekTimeRef = useRef<number>(0);
 
   const movie = useAppStore((s) => s.currentMovie);
   const sync = useAppStore((s) => s.syncState);
@@ -14,7 +15,8 @@ export const CinemaVideoLayer: React.FC = () => {
   const isSitting = useAppStore((s) => s.isSitting);
   const seatIndex = useAppStore((s) => s.seatIndex);
 
-  const seated = isSitting && (seatIndex === 0 || seatIndex === 1);
+  // Cinema screen is visible whenever the user is seated in the cinema
+  const seated = isSitting;
   const source = movie?.playbackUrl
     ? movie.playbackUrl.startsWith('http')
       ? movie.playbackUrl
@@ -59,7 +61,7 @@ export const CinemaVideoLayer: React.FC = () => {
     const action = state.syncState.action || (state.isPlaying ? 'PLAY' : 'PAUSE');
     const targetTime = state.syncState.currentTime;
 
-    // Handle PAUSE: freeze at current position, never reset to 0
+    // 1. Handle PAUSE: freeze at current position, never reset to 0
     if (action === 'PAUSE' || !state.isPlaying) {
       if (!video.paused) {
         video.pause();
@@ -67,20 +69,25 @@ export const CinemaVideoLayer: React.FC = () => {
       video.playbackRate = 1.0;
       if (Number.isFinite(targetTime) && Math.abs(video.currentTime - targetTime) > 0.5) {
         video.currentTime = targetTime;
+        lastSeekTimeRef.current = Date.now();
       }
       return;
     }
 
-    // Handle explicit SEEK: jump to timestamp immediately
+    // 2. Handle explicit SEEK: jump to timestamp immediately
     if (action === 'SEEK') {
-      if (Number.isFinite(targetTime) && Math.abs(video.currentTime - targetTime) > 0.25) {
+      if (Number.isFinite(targetTime) && Math.abs(video.currentTime - targetTime) > 0.3) {
         video.currentTime = targetTime;
+        lastSeekTimeRef.current = Date.now();
       }
       video.playbackRate = 1.0;
+      if (state.isPlaying && video.paused) {
+        video.play().catch(() => {});
+      }
       return;
     }
 
-    // Handle PLAY: resume playback if paused
+    // 3. Handle PLAY: resume playback if paused
     if (video.paused && state.isPlaying) {
       const p = video.play();
       if (p !== undefined) {
@@ -91,24 +98,33 @@ export const CinemaVideoLayer: React.FC = () => {
       }
     }
 
-    // Natural audio-first sync: strictly preserve 100% natural voice pitch and tempo (1.0x)
+    // Always maintain 100% natural 1.0x playback rate so voice pitch and speed never distort
+    video.playbackRate = 1.0;
+
+    // 4. Guest synchronization during continuous playback:
+    // Guards against infinite seek loops on mobile:
+    // - Never seek if already seeking (video.seeking === true)
+    // - Never seek if currently buffering (video.readyState < 3)
+    // - Never seek within an 8-second cooldown after a previous seek (lets mobile TCP/range buffer stabilize)
+    // - Drift threshold is relaxed to 3.5s so normal network jitter never interrupts smooth playback
     if (!isHost && Number.isFinite(targetTime) && targetTime > 0) {
       const now = Date.now();
-      const packetAge = state.syncState.timestamp
-        ? Math.max(0, Math.min(0.5, (now - state.syncState.timestamp) / 1000))
-        : 0;
-      const effectiveHostTime = targetTime + packetAge;
-      const drift = video.currentTime - effectiveHostTime;
+      const inCooldown = now - lastSeekTimeRef.current < 8000;
+      const isBuffering = video.seeking || video.readyState < 3;
 
-      // Always maintain 1.0x playback rate so voice pitch and speed never distort
-      video.playbackRate = 1.0;
+      if (!inCooldown && !isBuffering) {
+        const packetAge = state.syncState.timestamp
+          ? Math.max(0, Math.min(0.5, (now - state.syncState.timestamp) / 1000))
+          : 0;
+        const effectiveHostTime = targetTime + packetAge;
+        const drift = video.currentTime - effectiveHostTime;
 
-      // Soft align only if noticeably desynchronized (> 1.8s)
-      if (Math.abs(drift) > 1.8) {
-        video.currentTime = effectiveHostTime;
+        if (Math.abs(drift) > 3.5) {
+          console.log(`[CinemaVideoLayer] Resyncing guest drift (${drift.toFixed(2)}s) to ${effectiveHostTime.toFixed(2)}s`);
+          video.currentTime = effectiveHostTime;
+          lastSeekTimeRef.current = now;
+        }
       }
-    } else {
-      video.playbackRate = 1.0;
     }
   };
 
@@ -167,10 +183,11 @@ export const CinemaVideoLayer: React.FC = () => {
         ref={videoRef}
         muted
         playsInline
-        preload="metadata"
+        preload="auto"
         className="absolute inset-0 h-full w-full bg-black object-contain pointer-events-none"
         onLoadedMetadata={applyCurrentState}
         onCanPlay={applyCurrentState}
+        onPlaying={applyCurrentState}
         onDurationChange={(event) => {
           const duration = event.currentTarget.duration;
           if (Number.isFinite(duration)) {
