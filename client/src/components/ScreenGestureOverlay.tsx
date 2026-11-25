@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Play, Pause, RotateCcw, FastForward, Zap, Volume2 } from 'lucide-react';
+import { Play, Pause, RotateCcw, FastForward, Volume2 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { socketService } from '../services/socketService';
 
@@ -20,11 +20,11 @@ export const ScreenGestureOverlay: React.FC = () => {
 
   // Visual feedback animations for gestures
   const [gestureFeedback, setGestureFeedback] = useState<{
-    type: 'PLAY' | 'PAUSE' | 'REWIND' | 'FORWARD' | 'FAST_FORWARD';
+    type: 'PLAY' | 'PAUSE' | 'REWIND' | 'FORWARD';
     id: number;
   } | null>(null);
 
-  // Tap & Long-press tracking
+  // Tap tracking
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const didDragRef = useRef(false);
   const lastTapRef = useRef<{ time: number; x: number; zone: 'LEFT' | 'CENTER' | 'RIGHT' }>({
@@ -32,8 +32,8 @@ export const ScreenGestureOverlay: React.FC = () => {
     x: 0,
     zone: 'CENTER',
   });
-  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const isFastForwardingRef = useRef(false);
+  const seekDebounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const accumulatedSeekTimeRef = useRef<number | null>(null);
 
   // Auto-hide controls after 2.5s of inactivity
   const showControlsTemporarily = () => {
@@ -47,13 +47,13 @@ export const ScreenGestureOverlay: React.FC = () => {
   useEffect(() => {
     return () => {
       if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+      if (seekDebounceTimerRef.current) clearTimeout(seekDebounceTimerRef.current);
     };
   }, []);
 
   if (!currentMovie || !isSitting) return null;
 
-  const triggerFeedback = (type: 'PLAY' | 'PAUSE' | 'REWIND' | 'FORWARD' | 'FAST_FORWARD') => {
+  const triggerFeedback = (type: 'PLAY' | 'PAUSE' | 'REWIND' | 'FORWARD') => {
     setGestureFeedback({ type, id: Date.now() });
     setTimeout(() => {
       setGestureFeedback((curr) => (curr?.type === type ? null : curr));
@@ -73,22 +73,6 @@ export const ScreenGestureOverlay: React.FC = () => {
         vid.play().catch(() => {});
       }
     }
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const relX = (e.clientX - rect.left) / rect.width;
-    const zone: 'LEFT' | 'CENTER' | 'RIGHT' = relX < 0.35 ? 'LEFT' : relX > 0.65 ? 'RIGHT' : 'CENTER';
-
-    // Start Long Press detection on Right Zone for 2x Fast-Forward
-    if (zone === 'RIGHT') {
-      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = setTimeout(() => {
-        if (!didDragRef.current) {
-          isFastForwardingRef.current = true;
-          setPlaybackRate(2.0);
-          triggerFeedback('FAST_FORWARD');
-        }
-      }, 380);
-    }
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -97,31 +81,11 @@ export const ScreenGestureOverlay: React.FC = () => {
       const dist = Math.hypot(e.clientX - dragStartRef.current.x, e.clientY - dragStartRef.current.y);
       if (dist > 10) {
         didDragRef.current = true;
-        if (longPressTimerRef.current) {
-          clearTimeout(longPressTimerRef.current);
-          longPressTimerRef.current = null;
-        }
       }
     }
   };
 
   const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    // Clear long-press timer
-    if (longPressTimerRef.current) {
-      clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-
-    // If 2x was active, restore normal 1.0x playback speed
-    if (isFastForwardingRef.current) {
-      isFastForwardingRef.current = false;
-      setPlaybackRate(1.0);
-      setGestureFeedback(null);
-      // Sync authoritative timestamp after fast-forward burst
-      socketService.sendMovieSync(isPlaying ? 'PLAY' : 'PAUSE', movieTime, currentMovie.playbackUrl);
-      return;
-    }
-
     // Ignore taps if the user was dragging camera
     if (didDragRef.current) {
       dragStartRef.current = null;
@@ -139,22 +103,42 @@ export const ScreenGestureOverlay: React.FC = () => {
     const vid = useAppStore.getState().activeVideoElement;
     const curTime = vid ? vid.currentTime : movieTime;
 
-    if (timeSinceLastTap < 300 && lastTapRef.current.zone === zone) {
+    if (timeSinceLastTap < 320 && lastTapRef.current.zone === zone) {
       if (zone === 'LEFT') {
-        // Double Tap Left: Rewind 10 seconds
-        const newTime = Math.max(0, curTime - 10);
-        if (vid) vid.currentTime = newTime;
-        setMovieSync({ action: 'SEEK', currentTime: newTime });
-        socketService.sendMovieSync('SEEK', newTime, currentMovie.playbackUrl);
+        // Double Tap Left: Rewind 10s (debounced to prevent mobile decoder stalls)
+        const baseTime = accumulatedSeekTimeRef.current !== null ? accumulatedSeekTimeRef.current : curTime;
+        const newTime = Math.max(0, baseTime - 10);
+        accumulatedSeekTimeRef.current = newTime;
         triggerFeedback('REWIND');
+
+        if (seekDebounceTimerRef.current) clearTimeout(seekDebounceTimerRef.current);
+        seekDebounceTimerRef.current = setTimeout(() => {
+          const target = accumulatedSeekTimeRef.current;
+          accumulatedSeekTimeRef.current = null;
+          if (target !== null) {
+            if (vid) vid.currentTime = target;
+            setMovieSync({ action: 'SEEK', currentTime: target });
+            socketService.sendMovieSync('SEEK', target, currentMovie.playbackUrl);
+          }
+        }, 250);
       } else if (zone === 'RIGHT') {
-        // Double Tap Right: Forward 10 seconds
-        const maxDuration = movieDuration || curTime + 10;
-        const newTime = Math.min(maxDuration, curTime + 10);
-        if (vid) vid.currentTime = newTime;
-        setMovieSync({ action: 'SEEK', currentTime: newTime });
-        socketService.sendMovieSync('SEEK', newTime, currentMovie.playbackUrl);
+        // Double Tap Right: Forward 10s (debounced to prevent mobile decoder stalls)
+        const baseTime = accumulatedSeekTimeRef.current !== null ? accumulatedSeekTimeRef.current : curTime;
+        const maxDuration = movieDuration || baseTime + 10;
+        const newTime = Math.min(maxDuration, baseTime + 10);
+        accumulatedSeekTimeRef.current = newTime;
         triggerFeedback('FORWARD');
+
+        if (seekDebounceTimerRef.current) clearTimeout(seekDebounceTimerRef.current);
+        seekDebounceTimerRef.current = setTimeout(() => {
+          const target = accumulatedSeekTimeRef.current;
+          accumulatedSeekTimeRef.current = null;
+          if (target !== null) {
+            if (vid) vid.currentTime = target;
+            setMovieSync({ action: 'SEEK', currentTime: target });
+            socketService.sendMovieSync('SEEK', target, currentMovie.playbackUrl);
+          }
+        }, 250);
       } else if (zone === 'CENTER') {
         // Double Tap Center: Toggle Play / Pause
         togglePlay();
@@ -217,6 +201,7 @@ export const ScreenGestureOverlay: React.FC = () => {
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
       className="absolute inset-0 z-30 pointer-events-auto select-none overflow-hidden"
     >
       {/* 1. VISUAL GESTURE BADGES (Animated Ripple Feedback) */}
@@ -245,13 +230,6 @@ export const ScreenGestureOverlay: React.FC = () => {
             <div className="absolute right-10 md:right-24 p-5 rounded-2xl bg-black/65 backdrop-blur-md border border-theatre-gold/40 text-theatre-gold flex items-center gap-2 animate-in slide-in-from-right duration-200 shadow-glow-gold">
               <span className="font-bold text-lg">+10s</span>
               <FastForward className="w-8 h-8" />
-            </div>
-          )}
-
-          {gestureFeedback.type === 'FAST_FORWARD' && (
-            <div className="absolute top-16 right-10 px-4 py-2 rounded-xl bg-amber-500/90 text-theatre-darkest font-extrabold text-sm flex items-center gap-2 animate-pulse shadow-glow-gold">
-              <Zap className="w-4 h-4 fill-current" />
-              <span>2X SPEED (RELEASE TO RETURN)</span>
             </div>
           )}
         </div>
@@ -294,9 +272,6 @@ export const ScreenGestureOverlay: React.FC = () => {
               </span>
               <span className="flex items-center gap-1 text-slate-400">
                 <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-bold text-theatre-gold">Double Tap Right</span> +10s
-              </span>
-              <span className="flex items-center gap-1 text-slate-400 hidden sm:inline-flex">
-                <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-bold text-theatre-gold">Hold Right</span> 2x Fast-Forward
               </span>
             </div>
 

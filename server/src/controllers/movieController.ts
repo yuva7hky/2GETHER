@@ -70,6 +70,25 @@ export const movieController = {
         return;
       }
 
+      // Member authorization check
+      const userId = ((req.query.userId || req.headers['x-user-id']) as string || '').trim();
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'User ID required' });
+        return;
+      }
+
+      const isMember =
+        room.hostId === userId ||
+        room.guestId === userId ||
+        room.hostPlayerId === userId ||
+        room.guestPlayerId === userId ||
+        room.players.has(userId);
+
+      if (!isMember) {
+        res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Not an authorized room member' });
+        return;
+      }
+
       if (room.movie) {
         const directR2Url = await movieService.getPlaybackUrl(room.movie.r2Key);
         res.json({
@@ -295,9 +314,8 @@ export const movieController = {
         return;
       }
 
-      // Member authorization check
+      // Member authorization check: user must belong to this room
       const isMember =
-        !userId ||
         room.hostId === userId ||
         room.guestId === userId ||
         room.hostPlayerId === userId ||
@@ -423,12 +441,59 @@ export const movieController = {
   },
 
   /**
-   * Emergency / tab-closure cleanup for room storage (triggered on tab close or leave)
+   * Room storage cleanup (authenticated room members only, when room is closing)
    */
   async cleanupRoomStorage(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
       const normalizedCode = (code || '').trim().toUpperCase();
+      const userId = ((req.body.userId || req.query.userId || req.headers['x-user-id']) as string || '').trim();
+
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'User ID required for cleanup' });
+        return;
+      }
+
+      const room = roomService.getRoom(normalizedCode);
+      if (room) {
+        // Membership check: only members of this room can trigger cleanup
+        const isMember =
+          room.hostId === userId ||
+          room.hostPlayerId === userId ||
+          room.guestId === userId ||
+          room.guestPlayerId === userId ||
+          room.players.has(userId);
+
+        if (!isMember) {
+          res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'User is not an authorized room member' });
+          return;
+        }
+
+        // Check if partner is still actively in room
+        let connectedCount = 0;
+        for (const p of room.players.values()) {
+          if (p.connected) connectedCount++;
+        }
+        if (connectedCount > 1) {
+          // Partner is still in theatre watching - keep R2 movie intact!
+          res.json({ success: true, message: 'Partner still connected in room; storage retained' });
+          return;
+        }
+      } else {
+        // Fallback check against Supabase
+        const dbRoom = await supabaseService.getRoomByCode(normalizedCode);
+        if (dbRoom) {
+          const members = await supabaseService.getMembers(dbRoom.id);
+          const isMember = members.some((m) => m.player_id === userId);
+          if (!isMember) {
+            res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'User is not an authorized room member' });
+            return;
+          }
+        } else {
+          res.status(404).json({ success: false, error: 'ROOM_NOT_FOUND', message: 'Room not found' });
+          return;
+        }
+      }
 
       await movieService.deleteMovieByRoom(normalizedCode);
 
@@ -437,7 +502,6 @@ export const movieController = {
         await supabaseService.deleteMovieMetadata(dbRoom.id);
       }
 
-      const room = roomService.getRoom(normalizedCode);
       if (room) {
         room.movie = null;
         room.syncState = {
@@ -454,58 +518,47 @@ export const movieController = {
   },
 
   /**
-   * Manual or administrative sweep of stale uncommitted multipart uploads
-   */
-  async cleanupStaleStorage(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const abortedCount = await movieService.cleanupStaleMultipartUploads(0);
-      res.json({ success: true, count: abortedCount, message: `Aborted ${abortedCount} stale multipart uploads` });
-    } catch (err) {
-      next(err);
-    }
-  },
-
-  /**
-   * Proxy fallback upload endpoint for individual parts when client direct R2 upload hits CORS
-   */
-  async uploadPartProxy(req: Request, res: Response, next: NextFunction): Promise<void> {
-    try {
-      const { key, uploadId, partNumber } = req.query;
-      if (!key || !uploadId || !partNumber) {
-        res.status(400).json({ success: false, error: 'Missing key, uploadId, or partNumber query param' });
-        return;
-      }
-      const pNum = parseInt(partNumber as string, 10);
-      const rawBody = req.body;
-      const buffer = Buffer.isBuffer(rawBody) ? rawBody : Buffer.from(rawBody);
-
-      const etag = await movieService.uploadPartDirect(
-        key as string,
-        uploadId as string,
-        pNum,
-        buffer
-      );
-      res.json({ success: true, partNumber: pNum, etag });
-    } catch (err) {
-      next(err);
-    }
-  },
-
-  /**
-   * HTTP Range video streaming route with full CORS support
+   * HTTP Range video streaming route with full CORS support and room membership check
    */
   async streamMovie(req: Request, res: Response, next: NextFunction): Promise<void> {
     try {
       const code = Array.isArray(req.params.code) ? req.params.code[0] : req.params.code;
       const normalizedCode = (code || '').trim().toUpperCase();
+      const userId = ((req.query.userId || req.headers['x-user-id']) as string || '').trim();
+
+      if (!userId) {
+        res.status(401).json({ success: false, error: 'UNAUTHORIZED', message: 'User ID required to access stream' });
+        return;
+      }
 
       let room = roomService.getRoom(normalizedCode);
+      if (room) {
+        const isMember =
+          room.hostId === userId ||
+          room.guestId === userId ||
+          room.hostPlayerId === userId ||
+          room.guestPlayerId === userId ||
+          room.players.has(userId);
+
+        if (!isMember) {
+          res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Not an authorized room member' });
+          return;
+        }
+      }
+
       let r2Key = room?.movie?.r2Key;
 
       if (!r2Key) {
         // Fallback check in Supabase
         const dbRoom = await supabaseService.getRoomByCode(normalizedCode);
         if (dbRoom) {
+          const members = await supabaseService.getMembers(dbRoom.id);
+          const isMember = members.some((m) => m.player_id === userId);
+          if (!isMember) {
+            res.status(403).json({ success: false, error: 'FORBIDDEN', message: 'Not an authorized room member' });
+            return;
+          }
+
           const meta = await supabaseService.getMovieMetadata(dbRoom.id);
           if (meta) {
             r2Key = meta.r2_object_key;
@@ -519,18 +572,18 @@ export const movieController = {
       }
 
       // Fast HTTP 302 redirect directly to Cloudflare R2 presigned URL to preserve Render server bandwidth
-      try {
-        const directR2Url = await movieService.getPlaybackUrl(r2Key);
-        if (directR2Url && directR2Url.startsWith('http')) {
-          res.redirect(302, directR2Url);
-          return;
-        }
-      } catch (redirErr) {
-        // Fallback to proxy stream if presign fails
+      const directR2Url = await movieService.getPlaybackUrl(r2Key);
+      if (directR2Url && directR2Url.startsWith('http')) {
+        res.redirect(302, directR2Url);
+        return;
       }
 
-      const rangeHeader = req.headers.range;
-      await movieService.streamVideo(r2Key, rangeHeader, res);
+      // Strictly reject server-side video proxying to guarantee 0 KB Render bandwidth egress
+      res.status(500).json({
+        success: false,
+        error: 'DIRECT_R2_STREAM_REQUIRED',
+        message: 'Direct Cloudflare R2 playback is required to preserve server bandwidth.',
+      });
     } catch (err) {
       next(err);
     }

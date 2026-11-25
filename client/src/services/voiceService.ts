@@ -226,6 +226,7 @@ class VoiceService {
       console.log('[VoiceService] Received remote audio stream');
       if (this.remoteAudioElement && event.streams[0]) {
         this.remoteAudioElement.srcObject = event.streams[0];
+        this.remoteAudioElement.play().catch(() => {});
         useAppStore.getState().setVoiceConnected(true);
       }
     };

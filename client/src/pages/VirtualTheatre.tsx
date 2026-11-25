@@ -96,29 +96,6 @@ export const VirtualTheatre: React.FC = () => {
     }
   }, [roomCode]);
 
-  // Emergency R2 storage cleanup on browser tab close / window unload
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      if (roomCode && isHost) {
-        const cleanupUrl = apiUrl(`/api/movies/${roomCode}/cleanup`);
-        const payload = JSON.stringify({ userId: localPlayer?.userId });
-        if (navigator.sendBeacon) {
-          navigator.sendBeacon(cleanupUrl, payload);
-        } else {
-          fetch(cleanupUrl, {
-            method: 'POST',
-            keepalive: true,
-            headers: { 'Content-Type': 'application/json' },
-            body: payload,
-          }).catch(() => {});
-        }
-      }
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [roomCode, isHost, localPlayer?.userId]);
-
   const handleCopyCode = () => {
     if (!roomCode) return;
     navigator.clipboard.writeText(roomCode);
@@ -128,13 +105,6 @@ export const VirtualTheatre: React.FC = () => {
 
   const handleLeaveTheatre = () => {
     if (roomCode) {
-      if (isHost) {
-        fetch(apiUrl(`/api/movies/${roomCode}/cleanup`), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: localPlayer?.userId }),
-        }).catch(() => {});
-      }
       socketService.leaveRoom();
     }
     leaveRoom();

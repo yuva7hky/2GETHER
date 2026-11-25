@@ -591,8 +591,14 @@ class RoomService {
       }
     }
 
-    // Coordinate with Supabase cleanup
-    supabaseService.cleanupInactiveRooms(30).catch((err) =>
+    // Coordinate with Supabase cleanup and delete associated R2 storage for expired rooms
+    supabaseService.cleanupInactiveRooms(30).then((cleanedCodes) => {
+      for (const code of cleanedCodes) {
+        movieService.deleteMovieByRoom(code).catch((err) =>
+          console.error(`[RoomService] Inactive room R2 cleanup error for ${code}:`, err.message)
+        );
+      }
+    }).catch((err) =>
       console.error('[RoomService] Supabase cleanupInactiveRooms error:', err.message)
     );
   }

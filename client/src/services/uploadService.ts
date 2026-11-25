@@ -51,18 +51,6 @@ class UploadService {
                 resolve(etag);
                 return;
               }
-              // If browser CORS policy masked ETag header, fallback to backend proxy for authoritative ETag
-              if (key && uploadId) {
-                console.warn(`[UploadService] Part ${partNumber} uploaded but ETag header was masked by browser CORS. Retrieving via proxy...`);
-                try {
-                  const proxyEtag = await this.uploadChunkViaProxy(key, uploadId, partNumber, blob, onPartProgress);
-                  resolve(proxyEtag);
-                  return;
-                } catch (proxyErr: any) {
-                  reject(new Error(`Failed to retrieve valid ETag for part ${partNumber}: ${proxyErr.message}`));
-                  return;
-                }
-              }
               reject(new Error(`Storage did not expose ETag header for part ${partNumber}. Check Cloudflare R2 CORS exposeHeaders.`));
             } else if (xhr.status === 403) {
               reject(new Error('AUTH_ERROR: Presigned credentials rejected by R2 storage (HTTP 403).'));
@@ -71,21 +59,8 @@ class UploadService {
             }
           };
 
-          xhr.onerror = async () => {
+          xhr.onerror = () => {
             this.activeXHRs.delete(xhr);
-            // If browser blocked direct R2 upload due to CORS (status 0), fallback to backend proxy
-            if (xhr.status === 0 && key && uploadId) {
-              console.warn(`[UploadService] Direct R2 CORS blocked on part ${partNumber}, falling back to backend upload proxy...`);
-              try {
-                const proxyEtag = await this.uploadChunkViaProxy(key, uploadId, partNumber, blob, onPartProgress);
-                resolve(proxyEtag);
-                return;
-              } catch (proxyErr: any) {
-                reject(new Error(`Direct CORS and Proxy fallback both failed on part ${partNumber}: ${proxyErr.message}`));
-                return;
-              }
-            }
-
             if (xhr.status === 0) {
               reject(new Error(
                 'CORS_ERROR: Direct browser upload was blocked by Cloudflare R2 CORS policy.'
@@ -119,56 +94,6 @@ class UploadService {
     }
 
     throw new Error(`Part ${partNumber} failed after ${maxRetries} attempts.`);
-  }
-
-  /**
-   * Uploads part through server proxy endpoint when direct R2 CORS fails
-   */
-  private async uploadChunkViaProxy(
-    key: string,
-    uploadId: string,
-    partNumber: number,
-    blob: Blob,
-    onPartProgress: (loaded: number) => void
-  ): Promise<string> {
-    const proxyUrl = apiUrl(
-      `/api/movies/upload-part-proxy?key=${encodeURIComponent(key)}&uploadId=${encodeURIComponent(uploadId)}&partNumber=${partNumber}`
-    );
-
-    return new Promise<string>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-      this.activeXHRs.add(xhr);
-      xhr.open('POST', proxyUrl, true);
-      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
-
-      xhr.upload.onprogress = (evt) => {
-        if (evt.lengthComputable) {
-          onPartProgress(evt.loaded);
-        }
-      };
-
-      xhr.onload = () => {
-        this.activeXHRs.delete(xhr);
-        try {
-          const data = JSON.parse(xhr.responseText);
-          if (xhr.status >= 200 && xhr.status < 300 && data.success && data.etag) {
-            onPartProgress(blob.size);
-            resolve(data.etag);
-          } else {
-            reject(new Error(data.error || `Proxy part upload failed with HTTP ${xhr.status}`));
-          }
-        } catch (_) {
-          reject(new Error(`Failed to parse proxy response (${xhr.status})`));
-        }
-      };
-
-      xhr.onerror = () => {
-        this.activeXHRs.delete(xhr);
-        reject(new Error(`Network error uploading part ${partNumber} via proxy`));
-      };
-
-      xhr.send(blob);
-    });
   }
 
   /**

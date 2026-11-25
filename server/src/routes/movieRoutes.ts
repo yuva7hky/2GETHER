@@ -10,9 +10,6 @@ router.get('/', movieController.info);
 // Presigned direct browser upload session
 router.post('/upload-request', uploadLimiter, movieController.initUpload);
 
-// Fallback upload-part proxy when direct Cloudflare R2 browser upload hits CORS
-router.post('/upload-part-proxy', express.raw({ type: '*/*', limit: '32mb' }), movieController.uploadPartProxy);
-
 // Finalize multipart upload
 router.post('/complete-upload', movieController.completeUpload);
 
@@ -31,10 +28,7 @@ router.get('/:code/stream', movieController.streamMovie);
 // Delete movie from R2 and database (creator only)
 router.delete('/:code', movieController.deleteMovie);
 
-// Fast tab-closure or exit cleanup for room storage
+// Fast tab-closure or exit cleanup for room storage (authenticated room members only)
 router.post('/:code/cleanup', movieController.cleanupRoomStorage);
-
-// Stale multipart uploads sweep
-router.post('/cleanup-stale-storage', movieController.cleanupStaleStorage);
 
 export const movieRoutes = router;

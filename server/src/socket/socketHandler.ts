@@ -361,12 +361,7 @@ export function setupSocketHandler(io: Server): void {
         remainingConnected,
       });
 
-      // If host leaves or no one is left, delete uploaded movie from R2 immediately
-      if (isHost || roomClosed || remainingConnected === 0) {
-        movieService.deleteMovieByRoom(roomCode).catch((err) =>
-          console.error('[Socket] deleteMovieByRoom on room:leave error:', err.message)
-        );
-      }
+      // Grace period and R2 cleanup is authoritatively managed by roomService.handleDisconnect
     });
 
     // 9. DISCONNECTION

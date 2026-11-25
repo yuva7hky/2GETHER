@@ -14,13 +14,14 @@ export const CinemaVideoLayer: React.FC = () => {
   const isHost = useAppStore((s) => s.isHost);
   const isSitting = useAppStore((s) => s.isSitting);
   const seatIndex = useAppStore((s) => s.seatIndex);
+  const localPlayer = useAppStore((s) => s.localPlayer);
 
   // Cinema screen is visible whenever the user is seated in the cinema
   const seated = isSitting;
   const source = movie?.playbackUrl
     ? movie.playbackUrl.startsWith('http')
       ? movie.playbackUrl
-      : apiUrl(movie.playbackUrl)
+      : apiUrl(`${movie.playbackUrl}${movie.playbackUrl.includes('?') ? '&' : '?'}userId=${encodeURIComponent(localPlayer?.userId || '')}`)
     : '';
 
   useEffect(() => {
@@ -76,7 +77,7 @@ export const CinemaVideoLayer: React.FC = () => {
 
     // 2. Handle explicit SEEK: jump to timestamp immediately
     if (action === 'SEEK') {
-      if (Number.isFinite(targetTime) && Math.abs(video.currentTime - targetTime) > 0.3) {
+      if (!video.seeking && Number.isFinite(targetTime) && Math.abs(video.currentTime - targetTime) > 0.3) {
         video.currentTime = targetTime;
         lastSeekTimeRef.current = Date.now();
       }
@@ -157,6 +158,11 @@ export const CinemaVideoLayer: React.FC = () => {
         if (useAppStore.getState().isPlaying && video.paused) {
           video.play().catch(() => {});
         }
+      }
+      // Also unlock remote partner voice audio on mobile
+      const remoteVoice = document.getElementById('2gether-remote-voice') as HTMLAudioElement | null;
+      if (remoteVoice && remoteVoice.paused) {
+        remoteVoice.play().catch(() => {});
       }
     };
     window.addEventListener('pointerdown', unlock, { passive: true });
