@@ -291,6 +291,14 @@ export function setupSocketHandler(io: Server): void {
       });
     });
 
+    socket.on('webrtc:restart', () => {
+      const roomCode = roomService.getRoomCodeBySocket(socket.id);
+      if (!roomCode) return;
+      socket.to(roomCode).emit('webrtc:restart', {
+        senderSocketId: socket.id,
+      });
+    });
+
     // 8.6 THEATRE ENTRANCE CO-OP QUEST
     socket.on('quest:key-pickup', (callback?: (res: any) => void) => {
       const session = roomService.getSessionBySocket(socket.id);

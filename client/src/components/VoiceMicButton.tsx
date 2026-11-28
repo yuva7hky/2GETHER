@@ -44,6 +44,7 @@ export const VoiceMicButton: React.FC<VoiceMicButtonProps> = ({ className = '', 
       voiceService.stopPushToTalk();
     } else {
       // Quick tap -> Toggle Mute / Unmute
+      voiceService.unlockAudio();
       const nextMuted = !isMicMuted;
       if (!nextMuted) {
         voiceService.ensureLocalMedia().then(() => {

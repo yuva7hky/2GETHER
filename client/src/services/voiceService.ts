@@ -1,7 +1,8 @@
 /**
  * 2GETHER WebRTC Peer-to-Peer Voice Chat Service
  * Ultra low-latency crystal clear voice communication for two hearts.
- * Supports: Push-to-Talk, Tap Mute/Unmute, Speaking Waves Detection & Cinema Ducking.
+ * Supports: Free TURN fallback (Metered OpenRelay), Keepalive NAT Ping, Auto-Reconnect,
+ *           AudioContext Autoplay Unlock, Push-to-Talk, Tap Mute/Unmute, Speaking Waves & Cinema Ducking.
  */
 
 import { Socket } from 'socket.io-client';
@@ -12,7 +13,18 @@ const ICE_SERVERS: RTCConfiguration = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+    {
+      urls: [
+        'turn:openrelay.metered.ca:80',
+        'turn:openrelay.metered.ca:443',
+        'turn:openrelay.metered.ca:443?transport=tcp',
+      ],
+      username: 'openrelayproject',
+      credential: 'openrelayproject',
+    },
   ],
+  iceCandidatePoolSize: 10,
 };
 
 class VoiceService {
@@ -20,6 +32,12 @@ class VoiceService {
   private localStream: MediaStream | null = null;
   private remoteAudioElement: HTMLAudioElement | null = null;
   private socket: Socket | null = null;
+  private dataChannel: RTCDataChannel | null = null;
+  private keepAliveInterval: ReturnType<typeof setInterval> | null = null;
+  private iceCandidatesQueue: RTCIceCandidateInit[] = [];
+  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+  private isCleaningUp = false;
+  private isAudioBlockedByAutoplay = false;
 
   // Voice Activity Detection (AnalyserNode)
   private audioContext: AudioContext | null = null;
@@ -36,16 +54,67 @@ class VoiceService {
    */
   public init(socket: Socket): void {
     this.socket = socket;
+    this.isCleaningUp = false;
     this.setupSignaling();
+    this.setupAutoplayUnlock();
 
     // Create hidden remote audio playback element
     if (!this.remoteAudioElement && typeof document !== 'undefined') {
-      const audio = document.createElement('audio');
-      audio.autoplay = true;
-      audio.setAttribute('playsinline', 'true');
-      audio.id = '2gether-remote-voice';
-      document.body.appendChild(audio);
+      let audio = document.getElementById('2gether-remote-voice') as HTMLAudioElement | null;
+      if (!audio) {
+        audio = document.createElement('audio');
+        audio.id = '2gether-remote-voice';
+        audio.autoplay = true;
+        audio.setAttribute('playsinline', 'true');
+        document.body.appendChild(audio);
+      }
+      audio.muted = false;
+      audio.volume = 1.0;
       this.remoteAudioElement = audio;
+    }
+  }
+
+  /**
+   * Global listener for user interaction to unlock browser autoplay policy for AudioContext & Remote Audio
+   */
+  private setupAutoplayUnlock(): void {
+    if (typeof window === 'undefined') return;
+
+    const unlock = () => {
+      // Resume AudioContext if suspended
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        this.audioContext.resume().catch(() => {});
+      }
+
+      // Resume remote audio element if blocked by browser autoplay
+      if (this.remoteAudioElement && (this.remoteAudioElement.paused || this.isAudioBlockedByAutoplay)) {
+        if (this.remoteAudioElement.srcObject) {
+          this.remoteAudioElement.muted = false;
+          this.remoteAudioElement.volume = 1.0;
+          this.remoteAudioElement
+            .play()
+            .then(() => {
+              this.isAudioBlockedByAutoplay = false;
+            })
+            .catch(() => {});
+        }
+      }
+    };
+
+    window.addEventListener('click', unlock, { passive: true });
+    window.addEventListener('touchstart', unlock, { passive: true });
+    window.addEventListener('pointerdown', unlock, { passive: true });
+    window.addEventListener('keydown', unlock, { passive: true });
+  }
+
+  public unlockAudio(): void {
+    if (this.audioContext && this.audioContext.state === 'suspended') {
+      this.audioContext.resume().catch(() => {});
+    }
+    if (this.remoteAudioElement && this.remoteAudioElement.srcObject) {
+      this.remoteAudioElement.muted = false;
+      this.remoteAudioElement.volume = 1.0;
+      this.remoteAudioElement.play().catch(() => {});
     }
   }
 
@@ -68,6 +137,7 @@ class VoiceService {
       try {
         if (this.peerConnection && payload.sdp) {
           await this.peerConnection.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+          await this.flushIceCandidates();
         }
       } catch (err: any) {
         console.error('[VoiceService] Error handling answer:', err);
@@ -77,11 +147,23 @@ class VoiceService {
     // Receive ICE candidate
     this.socket.on('webrtc:ice-candidate', async (payload: { candidate: RTCIceCandidateInit }) => {
       try {
-        if (this.peerConnection && payload.candidate) {
+        if (!payload.candidate) return;
+        if (this.peerConnection && this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type) {
           await this.peerConnection.addIceCandidate(new RTCIceCandidate(payload.candidate));
+        } else {
+          // Queue ICE candidate until remote description is set
+          this.iceCandidatesQueue.push(payload.candidate);
         }
       } catch (err: any) {
         console.warn('[VoiceService] Warning adding ICE candidate:', err);
+      }
+    });
+
+    // Partner requested WebRTC Restart (e.g. after network drop / reconnect)
+    this.socket.on('webrtc:restart', async () => {
+      console.log('[VoiceService] Partner requested WebRTC restart');
+      if (useAppStore.getState().isHost) {
+        await this.restartCall();
       }
     });
 
@@ -90,6 +172,20 @@ class VoiceService {
       useAppStore.getState().setRemoteSpeaking(payload.isSpeaking);
       this.handleCinemaDucking();
     });
+  }
+
+  private async flushIceCandidates(): Promise<void> {
+    if (!this.peerConnection || !this.peerConnection.remoteDescription) return;
+    while (this.iceCandidatesQueue.length > 0) {
+      const candidate = this.iceCandidatesQueue.shift();
+      if (candidate) {
+        try {
+          await this.peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+          console.warn('[VoiceService] Queued ICE candidate error:', e);
+        }
+      }
+    }
   }
 
   /**
@@ -116,6 +212,19 @@ class VoiceService {
       const isMuted = useAppStore.getState().isMicMuted;
       this.setMuted(isMuted);
 
+      // If peer connection already exists, attach or replace audio track
+      if (this.peerConnection) {
+        const senders = this.peerConnection.getSenders();
+        stream.getAudioTracks().forEach((track) => {
+          const audioSender = senders.find((s) => s.track?.kind === 'audio');
+          if (audioSender) {
+            audioSender.replaceTrack(track).catch(() => {});
+          } else {
+            this.peerConnection?.addTrack(track, stream);
+          }
+        });
+      }
+
       // Setup VAD (Voice Activity Detection)
       this.setupVAD(stream);
 
@@ -134,7 +243,13 @@ class VoiceService {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
 
-      this.audioContext = new AudioCtx();
+      if (!this.audioContext || this.audioContext.state === 'closed') {
+        this.audioContext = new AudioCtx();
+      }
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume().catch(() => {});
+      }
+
       const source = this.audioContext.createMediaStreamSource(stream);
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 512;
@@ -161,7 +276,7 @@ class VoiceService {
           sum += buffer[i];
         }
         const average = sum / buffer.length;
-        const speakingNow = average > 32; // Intentional voice threshold (ignores ambient fan / room hum)
+        const speakingNow = average > 32; // Intentional voice threshold
 
         if (speakingNow !== this.isCurrentlySpeaking) {
           this.setSpeaking(speakingNow);
@@ -204,6 +319,31 @@ class VoiceService {
   }
 
   /**
+   * Keepalive DataChannel setup: Sends a small ping every 5 seconds to keep mobile UDP NAT pinholes open
+   */
+  private setupDataChannel(dc: RTCDataChannel): void {
+    this.dataChannel = dc;
+    dc.onopen = () => {
+      console.log('[VoiceService] WebRTC keepalive data channel active');
+      if (this.keepAliveInterval) clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = setInterval(() => {
+        if (this.dataChannel && this.dataChannel.readyState === 'open') {
+          try {
+            this.dataChannel.send('p');
+          } catch {}
+        }
+      }, 5000);
+    };
+
+    dc.onclose = () => {
+      if (this.keepAliveInterval) {
+        clearInterval(this.keepAliveInterval);
+        this.keepAliveInterval = null;
+      }
+    };
+  }
+
+  /**
    * Creates WebRTC Peer Connection and attaches tracks
    */
   private async createPeer(): Promise<RTCPeerConnection> {
@@ -211,6 +351,7 @@ class VoiceService {
       return this.peerConnection;
     }
 
+    this.iceCandidatesQueue = [];
     const pc = new RTCPeerConnection(ICE_SERVERS);
     this.peerConnection = pc;
 
@@ -226,21 +367,58 @@ class VoiceService {
       console.log('[VoiceService] Received remote audio stream');
       if (this.remoteAudioElement && event.streams[0]) {
         this.remoteAudioElement.srcObject = event.streams[0];
-        this.remoteAudioElement.play().catch(() => {});
+        this.remoteAudioElement.muted = false;
+        this.remoteAudioElement.volume = 1.0;
+        this.remoteAudioElement
+          .play()
+          .then(() => {
+            this.isAudioBlockedByAutoplay = false;
+          })
+          .catch((err) => {
+            console.log('[VoiceService] Remote audio autoplay deferred until user interaction:', err.message);
+            this.isAudioBlockedByAutoplay = true;
+          });
         useAppStore.getState().setVoiceConnected(true);
       }
     };
 
+    // Listen to ICE Connection State
+    pc.oniceconnectionstatechange = () => {
+      console.log('[VoiceService] ICE state:', pc.iceConnectionState);
+      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+        useAppStore.getState().setVoiceConnected(true);
+        if (this.reconnectTimeout) {
+          clearTimeout(this.reconnectTimeout);
+          this.reconnectTimeout = null;
+        }
+      } else if (pc.iceConnectionState === 'disconnected') {
+        useAppStore.getState().setVoiceConnected(false);
+        this.scheduleAutoReconnect(3000);
+      } else if (pc.iceConnectionState === 'failed') {
+        useAppStore.getState().setVoiceConnected(false);
+        this.scheduleAutoReconnect(500);
+      }
+    };
+
+    // Listen to Peer Connection State
     pc.onconnectionstatechange = () => {
       console.log('[VoiceService] Connection state:', pc.connectionState);
       if (pc.connectionState === 'connected') {
         useAppStore.getState().setVoiceConnected(true);
-      } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+        if (this.reconnectTimeout) {
+          clearTimeout(this.reconnectTimeout);
+          this.reconnectTimeout = null;
+        }
+      } else if (pc.connectionState === 'disconnected') {
         useAppStore.getState().setVoiceConnected(false);
+        this.scheduleAutoReconnect(3000);
+      } else if (pc.connectionState === 'failed') {
+        useAppStore.getState().setVoiceConnected(false);
+        this.scheduleAutoReconnect(500);
       }
     };
 
-    // Attach local microphone audio track
+    // Attach local microphone audio track if available
     const stream = await this.ensureLocalMedia();
     if (stream) {
       stream.getAudioTracks().forEach((track) => {
@@ -252,11 +430,56 @@ class VoiceService {
   }
 
   /**
+   * Auto-reconnect scheduler on temporary disconnect or drop
+   */
+  private scheduleAutoReconnect(delayMs: number): void {
+    if (this.isCleaningUp || this.reconnectTimeout) return;
+    this.reconnectTimeout = setTimeout(async () => {
+      this.reconnectTimeout = null;
+      if (this.isCleaningUp || !this.socket || !this.socket.connected) return;
+      if (!useAppStore.getState().otherPlayer) return;
+
+      console.log('[VoiceService] Auto-reconnecting WebRTC voice...');
+      const isHost = useAppStore.getState().isHost;
+      if (isHost) {
+        await this.restartCall();
+      } else {
+        this.socket.emit('webrtc:restart');
+      }
+    }, delayMs);
+  }
+
+  /**
+   * Restarts the WebRTC call (cleans up stale peer and re-initiates)
+   */
+  public async restartCall(): Promise<void> {
+    if (this.isCleaningUp) return;
+    console.log('[VoiceService] Restarting WebRTC voice call...');
+    if (this.peerConnection) {
+      try {
+        this.peerConnection.close();
+      } catch {}
+      this.peerConnection = null;
+    }
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = null;
+    }
+    this.dataChannel = null;
+    await this.callPartner();
+  }
+
+  /**
    * Host initiates WebRTC call offer to the joined guest
    */
   public async callPartner(): Promise<void> {
     try {
       const pc = await this.createPeer();
+
+      // Create Keepalive DataChannel
+      const dc = pc.createDataChannel('keepalive');
+      this.setupDataChannel(dc);
+
       const offer = await pc.createOffer({
         offerToReceiveAudio: true,
         offerToReceiveVideo: false,
@@ -277,7 +500,14 @@ class VoiceService {
    */
   private async handleOffer(sdp: RTCSessionDescriptionInit): Promise<void> {
     const pc = await this.createPeer();
+
+    pc.ondatachannel = (event) => {
+      this.setupDataChannel(event.channel);
+    };
+
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+    await this.flushIceCandidates();
+
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
 
@@ -299,6 +529,16 @@ class VoiceService {
       });
     }
 
+    // Ensure audio sender is attached to the peer connection
+    if (this.peerConnection && !muted && this.localStream) {
+      const senders = this.peerConnection.getSenders();
+      const audioSender = senders.find((s) => s.track?.kind === 'audio');
+      const activeTrack = this.localStream.getAudioTracks()[0];
+      if (audioSender && activeTrack && audioSender.track !== activeTrack) {
+        audioSender.replaceTrack(activeTrack).catch(() => {});
+      }
+    }
+
     if (muted && this.isCurrentlySpeaking) {
       this.setSpeaking(false);
     }
@@ -308,6 +548,7 @@ class VoiceService {
    * Push-to-Talk activation (on press down)
    */
   public startPushToTalk(): void {
+    this.unlockAudio();
     this.ensureLocalMedia().then(() => {
       this.setMuted(false);
     });
@@ -324,6 +565,18 @@ class VoiceService {
    * Cleanup on room exit
    */
   public cleanup(): void {
+    this.isCleaningUp = true;
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    if (this.keepAliveInterval) {
+      clearInterval(this.keepAliveInterval);
+      this.keepAliveInterval = null;
+    }
+
     if (this.vadInterval) {
       clearInterval(this.vadInterval);
       this.vadInterval = null;
@@ -339,8 +592,17 @@ class VoiceService {
       this.localStream = null;
     }
 
+    if (this.dataChannel) {
+      try {
+        this.dataChannel.close();
+      } catch {}
+      this.dataChannel = null;
+    }
+
     if (this.peerConnection) {
-      this.peerConnection.close();
+      try {
+        this.peerConnection.close();
+      } catch {}
       this.peerConnection = null;
     }
 
@@ -348,6 +610,7 @@ class VoiceService {
       this.remoteAudioElement.srcObject = null;
     }
 
+    this.iceCandidatesQueue = [];
     useAppStore.getState().setVoiceConnected(false);
     useAppStore.getState().setLocalSpeaking(false);
     useAppStore.getState().setRemoteSpeaking(false);

@@ -122,6 +122,9 @@ class SocketService {
       const localPlayer = useAppStore.getState().localPlayer;
       if (localPlayer && data.player.playerId === localPlayer.playerId) return;
       useAppStore.getState().setOtherPlayer(data.player);
+      if (useAppStore.getState().isHost) {
+        setTimeout(() => voiceService.restartCall(), 600);
+      }
     });
 
     this.socket.on('player:disconnected', (data: { playerId: string; characterName: string; remainingConnected: number }) => {
