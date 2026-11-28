@@ -38,6 +38,7 @@ class VoiceService {
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
   private isCleaningUp = false;
   private isAudioBlockedByAutoplay = false;
+  private silentTrack: MediaStreamTrack | null = null;
 
   // Voice Activity Detection (AnalyserNode)
   private audioContext: AudioContext | null = null;
@@ -185,6 +186,57 @@ class VoiceService {
           console.warn('[VoiceService] Queued ICE candidate error:', e);
         }
       }
+    }
+  }
+
+  /**
+   * Generates a zero-volume silent audio track via Web Audio to keep WebRTC transceiver bidirectional (sendrecv)
+   */
+  private getOrCreateSilentTrack(): MediaStreamTrack | null {
+    if (this.silentTrack && this.silentTrack.readyState === 'live') {
+      return this.silentTrack;
+    }
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return null;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const dst = ctx.createMediaStreamDestination();
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      osc.connect(gain);
+      gain.connect(dst);
+      osc.start();
+      this.silentTrack = dst.stream.getAudioTracks()[0] || null;
+      return this.silentTrack;
+    } catch (e: any) {
+      console.warn('[VoiceService] Could not generate silent audio track:', e.message);
+      return null;
+    }
+  }
+
+  /**
+   * Safely attaches a track onto the peer connection's audio transceiver
+   */
+  private attachTrackToPeer(pc: RTCPeerConnection | null, track: MediaStreamTrack | null): void {
+    if (!pc || !track) return;
+    try {
+      const senders = pc.getSenders();
+      const alreadySending = senders.some((s) => s.track === track || (s.track && s.track.id === track.id));
+      if (alreadySending) return;
+
+      const audioSender = senders.find((s) => s.track?.kind === 'audio' || s.track === null);
+      if (audioSender) {
+        audioSender.replaceTrack(track).catch(() => {});
+      } else {
+        try {
+          pc.addTrack(track);
+        } catch (err: any) {
+          console.warn('[VoiceService] addTrack safe warning:', err.message);
+        }
+      }
+    } catch (e: any) {
+      console.warn('[VoiceService] attachTrackToPeer warning:', e.message);
     }
   }
 
@@ -450,10 +502,14 @@ class VoiceService {
       console.warn('[VoiceService] addTransceiver warning:', e.message);
     }
 
-    // Attach local microphone audio track if already available; otherwise acquire non-blockingly
-    if (this.localStream) {
+    // Attach local microphone audio track if available and unmuted; otherwise attach silent track to ensure sendrecv
+    if (this.localStream && !useAppStore.getState().isMicMuted) {
       this.attachStreamToPeer(pc, this.localStream);
     } else {
+      const silent = this.getOrCreateSilentTrack();
+      if (silent) {
+        this.attachTrackToPeer(pc, silent);
+      }
       this.ensureLocalMedia().catch(() => {});
     }
 
@@ -561,8 +617,15 @@ class VoiceService {
     }
 
     // Ensure audio sender is attached to the peer connection safely
-    if (this.peerConnection && !muted && this.localStream) {
-      this.attachStreamToPeer(this.peerConnection, this.localStream);
+    if (this.peerConnection) {
+      if (!muted && this.localStream) {
+        this.attachStreamToPeer(this.peerConnection, this.localStream);
+      } else if (muted) {
+        const silent = this.getOrCreateSilentTrack();
+        if (silent) {
+          this.attachTrackToPeer(this.peerConnection, silent);
+        }
+      }
     }
 
     if (muted && this.isCurrentlySpeaking) {
@@ -616,6 +679,13 @@ class VoiceService {
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => track.stop());
       this.localStream = null;
+    }
+
+    if (this.silentTrack) {
+      try {
+        this.silentTrack.stop();
+      } catch {}
+      this.silentTrack = null;
     }
 
     if (this.dataChannel) {
