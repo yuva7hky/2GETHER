@@ -1,8 +1,7 @@
 /**
  * 2GETHER WebRTC Peer-to-Peer Voice Chat Service
- * Ultra low-latency crystal clear voice communication for two hearts.
- * Supports: Free TURN fallback (Metered OpenRelay), Keepalive NAT Ping, Auto-Reconnect,
- *           AudioContext Autoplay Unlock, Push-to-Talk, Tap Mute/Unmute, Speaking Waves & Cinema Ducking.
+ * Ultra low-latency crystal clear direct voice communication for two hearts.
+ * Rock-solid direct P2P audio with Google STUN, VAD speaking waves, and cinema ducking.
  */
 
 import { Socket } from 'socket.io-client';
@@ -13,18 +12,9 @@ const ICE_SERVERS: RTCConfiguration = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turn:openrelay.metered.ca:443?transport=tcp',
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
   ],
-  iceCandidatePoolSize: 10,
 };
 
 class VoiceService {
@@ -32,13 +22,7 @@ class VoiceService {
   private localStream: MediaStream | null = null;
   private remoteAudioElement: HTMLAudioElement | null = null;
   private socket: Socket | null = null;
-  private dataChannel: RTCDataChannel | null = null;
-  private keepAliveInterval: ReturnType<typeof setInterval> | null = null;
   private iceCandidatesQueue: RTCIceCandidateInit[] = [];
-  private reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
-  private isCleaningUp = false;
-  private isAudioBlockedByAutoplay = false;
-  private silentTrack: MediaStreamTrack | null = null;
 
   // Voice Activity Detection (AnalyserNode)
   private audioContext: AudioContext | null = null;
@@ -55,7 +39,6 @@ class VoiceService {
    */
   public init(socket: Socket): void {
     this.socket = socket;
-    this.isCleaningUp = false;
     this.setupSignaling();
     this.setupAutoplayUnlock();
 
@@ -76,35 +59,22 @@ class VoiceService {
   }
 
   /**
-   * Global listener for user interaction to unlock browser autoplay policy for AudioContext & Remote Audio
+   * Unlocks remote audio element and audio context on user interaction (resolves browser autoplay policy)
    */
   private setupAutoplayUnlock(): void {
     if (typeof window === 'undefined') return;
 
     const unlock = () => {
-      // Resume AudioContext if suspended
       if (this.audioContext && this.audioContext.state === 'suspended') {
         this.audioContext.resume().catch(() => {});
       }
-
-      // Resume remote audio element if blocked by browser autoplay
-      if (this.remoteAudioElement && (this.remoteAudioElement.paused || this.isAudioBlockedByAutoplay)) {
-        if (this.remoteAudioElement.srcObject) {
-          this.remoteAudioElement.muted = false;
-          this.remoteAudioElement.volume = 1.0;
-          this.remoteAudioElement
-            .play()
-            .then(() => {
-              this.isAudioBlockedByAutoplay = false;
-            })
-            .catch(() => {});
-        }
+      if (this.remoteAudioElement && this.remoteAudioElement.paused && this.remoteAudioElement.srcObject) {
+        this.remoteAudioElement.play().catch(() => {});
       }
     };
 
     window.addEventListener('click', unlock, { passive: true });
     window.addEventListener('touchstart', unlock, { passive: true });
-    window.addEventListener('pointerdown', unlock, { passive: true });
     window.addEventListener('keydown', unlock, { passive: true });
   }
 
@@ -113,8 +83,6 @@ class VoiceService {
       this.audioContext.resume().catch(() => {});
     }
     if (this.remoteAudioElement && this.remoteAudioElement.srcObject) {
-      this.remoteAudioElement.muted = false;
-      this.remoteAudioElement.volume = 1.0;
       this.remoteAudioElement.play().catch(() => {});
     }
   }
@@ -152,19 +120,10 @@ class VoiceService {
         if (this.peerConnection && this.peerConnection.remoteDescription && this.peerConnection.remoteDescription.type) {
           await this.peerConnection.addIceCandidate(new RTCIceCandidate(payload.candidate));
         } else {
-          // Queue ICE candidate until remote description is set
           this.iceCandidatesQueue.push(payload.candidate);
         }
       } catch (err: any) {
         console.warn('[VoiceService] Warning adding ICE candidate:', err);
-      }
-    });
-
-    // Partner requested WebRTC Restart (e.g. after network drop / reconnect)
-    this.socket.on('webrtc:restart', async () => {
-      console.log('[VoiceService] Partner requested WebRTC restart');
-      if (useAppStore.getState().isHost) {
-        await this.restartCall();
       }
     });
 
@@ -190,80 +149,28 @@ class VoiceService {
   }
 
   /**
-   * Generates a zero-volume silent audio track via Web Audio to keep WebRTC transceiver bidirectional (sendrecv)
+   * Safely attaches local audio tracks to the peer connection without duplicate sender errors
    */
-  private getOrCreateSilentTrack(): MediaStreamTrack | null {
-    if (this.silentTrack && this.silentTrack.readyState === 'live') {
-      return this.silentTrack;
-    }
-    try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-      if (!AudioCtx) return null;
-      const ctx = new AudioCtx();
-      const osc = ctx.createOscillator();
-      const dst = ctx.createMediaStreamDestination();
-      const gain = ctx.createGain();
-      gain.gain.value = 0;
-      osc.connect(gain);
-      gain.connect(dst);
-      osc.start();
-      this.silentTrack = dst.stream.getAudioTracks()[0] || null;
-      return this.silentTrack;
-    } catch (e: any) {
-      console.warn('[VoiceService] Could not generate silent audio track:', e.message);
-      return null;
-    }
-  }
-
-  /**
-   * Safely attaches a track onto the peer connection's audio transceiver
-   */
-  private attachTrackToPeer(pc: RTCPeerConnection | null, track: MediaStreamTrack | null): void {
-    if (!pc || !track) return;
-    try {
-      const senders = pc.getSenders();
-      const alreadySending = senders.some((s) => s.track === track || (s.track && s.track.id === track.id));
-      if (alreadySending) return;
-
-      const audioSender = senders.find((s) => s.track?.kind === 'audio' || s.track === null);
-      if (audioSender) {
-        audioSender.replaceTrack(track).catch(() => {});
-      } else {
-        try {
-          pc.addTrack(track);
-        } catch (err: any) {
-          console.warn('[VoiceService] addTrack safe warning:', err.message);
-        }
-      }
-    } catch (e: any) {
-      console.warn('[VoiceService] attachTrackToPeer warning:', e.message);
-    }
-  }
-
-  /**
-   * Safely attaches or replaces local audio tracks onto a peer connection without throwing duplicate sender errors
-   */
-  private attachStreamToPeer(pc: RTCPeerConnection | null, stream: MediaStream | null): void {
-    if (!pc || !stream) return;
+  private attachLocalTracks(pc: RTCPeerConnection, stream: MediaStream): void {
     try {
       const senders = pc.getSenders();
       stream.getAudioTracks().forEach((track) => {
         const alreadyAdded = senders.some((s) => s.track === track || (s.track && s.track.id === track.id));
         if (alreadyAdded) return;
 
-        const audioSender = senders.find((s) => s.track?.kind === 'audio' || s.track === null);
+        const audioSender = senders.find((s) => s.track?.kind === 'audio');
         if (audioSender) {
           audioSender.replaceTrack(track).catch(() => {});
         } else {
           try {
             pc.addTrack(track, stream);
-          } catch (trackErr: any) {
-            console.warn('[VoiceService] addTrack safe warning:', trackErr.message);
+          } catch (err: any) {
+            console.warn('[VoiceService] addTrack warning:', err.message);
           }
         }
       });
     } catch (e: any) {
-      console.warn('[VoiceService] attachStreamToPeer warning:', e.message);
+      console.warn('[VoiceService] attachLocalTracks warning:', e.message);
     }
   }
 
@@ -291,9 +198,9 @@ class VoiceService {
       const isMuted = useAppStore.getState().isMicMuted;
       this.setMuted(isMuted);
 
-      // If peer connection already exists, attach or replace audio track safely
+      // If peer connection already exists, attach audio track
       if (this.peerConnection) {
-        this.attachStreamToPeer(this.peerConnection, stream);
+        this.attachLocalTracks(this.peerConnection, stream);
       }
 
       // Setup VAD (Voice Activity Detection)
@@ -347,7 +254,7 @@ class VoiceService {
           sum += buffer[i];
         }
         const average = sum / buffer.length;
-        const speakingNow = average > 32; // Intentional voice threshold
+        const speakingNow = average > 32;
 
         if (speakingNow !== this.isCurrentlySpeaking) {
           this.setSpeaking(speakingNow);
@@ -390,31 +297,6 @@ class VoiceService {
   }
 
   /**
-   * Keepalive DataChannel setup: Sends a small ping every 5 seconds to keep mobile UDP NAT pinholes open
-   */
-  private setupDataChannel(dc: RTCDataChannel): void {
-    this.dataChannel = dc;
-    dc.onopen = () => {
-      console.log('[VoiceService] WebRTC keepalive data channel active');
-      if (this.keepAliveInterval) clearInterval(this.keepAliveInterval);
-      this.keepAliveInterval = setInterval(() => {
-        if (this.dataChannel && this.dataChannel.readyState === 'open') {
-          try {
-            this.dataChannel.send('p');
-          } catch {}
-        }
-      }, 5000);
-    };
-
-    dc.onclose = () => {
-      if (this.keepAliveInterval) {
-        clearInterval(this.keepAliveInterval);
-        this.keepAliveInterval = null;
-      }
-    };
-  }
-
-  /**
    * Creates WebRTC Peer Connection and attaches tracks
    */
   private async createPeer(): Promise<RTCPeerConnection> {
@@ -435,124 +317,48 @@ class VoiceService {
 
     // Receive remote audio track
     pc.ontrack = (event) => {
-      console.log('[VoiceService] Received remote audio track');
-      if (this.remoteAudioElement) {
-        const stream = (event.streams && event.streams[0]) || (event.track ? new MediaStream([event.track]) : null);
-        if (stream) {
-          this.remoteAudioElement.srcObject = stream;
-          this.remoteAudioElement.muted = false;
-          this.remoteAudioElement.volume = 1.0;
-          this.remoteAudioElement
-            .play()
-            .then(() => {
-              this.isAudioBlockedByAutoplay = false;
-            })
-            .catch((err) => {
-              console.log('[VoiceService] Remote audio autoplay deferred until user interaction:', err.message);
-              this.isAudioBlockedByAutoplay = true;
-            });
-          useAppStore.getState().setVoiceConnected(true);
-        }
-      }
-    };
-
-    // Listen to ICE Connection State
-    pc.oniceconnectionstatechange = () => {
-      console.log('[VoiceService] ICE state:', pc.iceConnectionState);
-      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+      console.log('[VoiceService] Received remote audio stream');
+      const stream = (event.streams && event.streams[0]) || (event.track ? new MediaStream([event.track]) : null);
+      if (this.remoteAudioElement && stream) {
+        this.remoteAudioElement.srcObject = stream;
+        this.remoteAudioElement.muted = false;
+        this.remoteAudioElement.volume = 1.0;
+        this.remoteAudioElement.play().catch((err) => {
+          console.log('[VoiceService] Autoplay deferred until user interaction:', err.message);
+        });
         useAppStore.getState().setVoiceConnected(true);
-        if (this.reconnectTimeout) {
-          clearTimeout(this.reconnectTimeout);
-          this.reconnectTimeout = null;
-        }
-      } else if (pc.iceConnectionState === 'disconnected') {
-        useAppStore.getState().setVoiceConnected(false);
-        this.scheduleAutoReconnect(3000);
-      } else if (pc.iceConnectionState === 'failed') {
-        useAppStore.getState().setVoiceConnected(false);
-        this.scheduleAutoReconnect(500);
       }
     };
 
-    // Listen to Peer Connection State
+    // Connection state changes
     pc.onconnectionstatechange = () => {
       console.log('[VoiceService] Connection state:', pc.connectionState);
       if (pc.connectionState === 'connected') {
         useAppStore.getState().setVoiceConnected(true);
-        if (this.reconnectTimeout) {
-          clearTimeout(this.reconnectTimeout);
-          this.reconnectTimeout = null;
-        }
-      } else if (pc.connectionState === 'disconnected') {
+      } else if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
         useAppStore.getState().setVoiceConnected(false);
-        this.scheduleAutoReconnect(3000);
-      } else if (pc.connectionState === 'failed') {
-        useAppStore.getState().setVoiceConnected(false);
-        this.scheduleAutoReconnect(500);
       }
     };
 
-    // Ensure bidirectional audio transceiver is configured upfront
-    try {
-      const hasAudio = pc.getTransceivers().some((t) => t.receiver?.track?.kind === 'audio');
-      if (!hasAudio) {
-        pc.addTransceiver('audio', { direction: 'sendrecv' });
-      }
-    } catch (e: any) {
-      console.warn('[VoiceService] addTransceiver warning:', e.message);
-    }
-
-    // Attach local microphone audio track if available and unmuted; otherwise attach silent track to ensure sendrecv
-    if (this.localStream && !useAppStore.getState().isMicMuted) {
-      this.attachStreamToPeer(pc, this.localStream);
-    } else {
-      const silent = this.getOrCreateSilentTrack();
-      if (silent) {
-        this.attachTrackToPeer(pc, silent);
-      }
-      this.ensureLocalMedia().catch(() => {});
+    // Attach local microphone audio track if available
+    const stream = await this.ensureLocalMedia();
+    if (stream) {
+      this.attachLocalTracks(pc, stream);
     }
 
     return pc;
   }
 
   /**
-   * Auto-reconnect scheduler on temporary disconnect or drop
-   */
-  private scheduleAutoReconnect(delayMs: number): void {
-    if (this.isCleaningUp || this.reconnectTimeout) return;
-    this.reconnectTimeout = setTimeout(async () => {
-      this.reconnectTimeout = null;
-      if (this.isCleaningUp || !this.socket || !this.socket.connected) return;
-      if (!useAppStore.getState().otherPlayer) return;
-
-      console.log('[VoiceService] Auto-reconnecting WebRTC voice...');
-      const isHost = useAppStore.getState().isHost;
-      if (isHost) {
-        await this.restartCall();
-      } else {
-        this.socket.emit('webrtc:restart');
-      }
-    }, delayMs);
-  }
-
-  /**
    * Restarts the WebRTC call (cleans up stale peer and re-initiates)
    */
   public async restartCall(): Promise<void> {
-    if (this.isCleaningUp) return;
-    console.log('[VoiceService] Restarting WebRTC voice call...');
     if (this.peerConnection) {
       try {
         this.peerConnection.close();
       } catch {}
       this.peerConnection = null;
     }
-    if (this.keepAliveInterval) {
-      clearInterval(this.keepAliveInterval);
-      this.keepAliveInterval = null;
-    }
-    this.dataChannel = null;
     await this.callPartner();
   }
 
@@ -562,10 +368,6 @@ class VoiceService {
   public async callPartner(): Promise<void> {
     try {
       const pc = await this.createPeer();
-
-      // Create Keepalive DataChannel
-      const dc = pc.createDataChannel('keepalive');
-      this.setupDataChannel(dc);
 
       const offer = await pc.createOffer({
         offerToReceiveAudio: true,
@@ -587,11 +389,6 @@ class VoiceService {
    */
   private async handleOffer(sdp: RTCSessionDescriptionInit): Promise<void> {
     const pc = await this.createPeer();
-
-    pc.ondatachannel = (event) => {
-      this.setupDataChannel(event.channel);
-    };
-
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
     await this.flushIceCandidates();
 
@@ -616,16 +413,8 @@ class VoiceService {
       });
     }
 
-    // Ensure audio sender is attached to the peer connection safely
-    if (this.peerConnection) {
-      if (!muted && this.localStream) {
-        this.attachStreamToPeer(this.peerConnection, this.localStream);
-      } else if (muted) {
-        const silent = this.getOrCreateSilentTrack();
-        if (silent) {
-          this.attachTrackToPeer(this.peerConnection, silent);
-        }
-      }
+    if (this.peerConnection && !muted && this.localStream) {
+      this.attachLocalTracks(this.peerConnection, this.localStream);
     }
 
     if (muted && this.isCurrentlySpeaking) {
@@ -654,18 +443,6 @@ class VoiceService {
    * Cleanup on room exit
    */
   public cleanup(): void {
-    this.isCleaningUp = true;
-
-    if (this.reconnectTimeout) {
-      clearTimeout(this.reconnectTimeout);
-      this.reconnectTimeout = null;
-    }
-
-    if (this.keepAliveInterval) {
-      clearInterval(this.keepAliveInterval);
-      this.keepAliveInterval = null;
-    }
-
     if (this.vadInterval) {
       clearInterval(this.vadInterval);
       this.vadInterval = null;
@@ -679,20 +456,6 @@ class VoiceService {
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => track.stop());
       this.localStream = null;
-    }
-
-    if (this.silentTrack) {
-      try {
-        this.silentTrack.stop();
-      } catch {}
-      this.silentTrack = null;
-    }
-
-    if (this.dataChannel) {
-      try {
-        this.dataChannel.close();
-      } catch {}
-      this.dataChannel = null;
     }
 
     if (this.peerConnection) {
