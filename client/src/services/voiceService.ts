@@ -189,6 +189,33 @@ class VoiceService {
   }
 
   /**
+   * Safely attaches or replaces local audio tracks onto a peer connection without throwing duplicate sender errors
+   */
+  private attachStreamToPeer(pc: RTCPeerConnection | null, stream: MediaStream | null): void {
+    if (!pc || !stream) return;
+    try {
+      const senders = pc.getSenders();
+      stream.getAudioTracks().forEach((track) => {
+        const alreadyAdded = senders.some((s) => s.track === track || (s.track && s.track.id === track.id));
+        if (alreadyAdded) return;
+
+        const audioSender = senders.find((s) => s.track?.kind === 'audio');
+        if (audioSender) {
+          audioSender.replaceTrack(track).catch(() => {});
+        } else {
+          try {
+            pc.addTrack(track, stream);
+          } catch (trackErr: any) {
+            console.warn('[VoiceService] addTrack safe warning:', trackErr.message);
+          }
+        }
+      });
+    } catch (e: any) {
+      console.warn('[VoiceService] attachStreamToPeer warning:', e.message);
+    }
+  }
+
+  /**
    * Requests microphone access and prepares local audio track
    */
   public async ensureLocalMedia(): Promise<MediaStream | null> {
@@ -212,17 +239,9 @@ class VoiceService {
       const isMuted = useAppStore.getState().isMicMuted;
       this.setMuted(isMuted);
 
-      // If peer connection already exists, attach or replace audio track
+      // If peer connection already exists, attach or replace audio track safely
       if (this.peerConnection) {
-        const senders = this.peerConnection.getSenders();
-        stream.getAudioTracks().forEach((track) => {
-          const audioSender = senders.find((s) => s.track?.kind === 'audio');
-          if (audioSender) {
-            audioSender.replaceTrack(track).catch(() => {});
-          } else {
-            this.peerConnection?.addTrack(track, stream);
-          }
-        });
+        this.attachStreamToPeer(this.peerConnection, stream);
       }
 
       // Setup VAD (Voice Activity Detection)
@@ -418,13 +437,9 @@ class VoiceService {
       }
     };
 
-    // Attach local microphone audio track if available
+    // Attach local microphone audio track safely without duplicating senders
     const stream = await this.ensureLocalMedia();
-    if (stream) {
-      stream.getAudioTracks().forEach((track) => {
-        pc.addTrack(track, stream);
-      });
-    }
+    this.attachStreamToPeer(pc, stream);
 
     return pc;
   }
@@ -529,14 +544,9 @@ class VoiceService {
       });
     }
 
-    // Ensure audio sender is attached to the peer connection
+    // Ensure audio sender is attached to the peer connection safely
     if (this.peerConnection && !muted && this.localStream) {
-      const senders = this.peerConnection.getSenders();
-      const audioSender = senders.find((s) => s.track?.kind === 'audio');
-      const activeTrack = this.localStream.getAudioTracks()[0];
-      if (audioSender && activeTrack && audioSender.track !== activeTrack) {
-        audioSender.replaceTrack(activeTrack).catch(() => {});
-      }
+      this.attachStreamToPeer(this.peerConnection, this.localStream);
     }
 
     if (muted && this.isCurrentlySpeaking) {
