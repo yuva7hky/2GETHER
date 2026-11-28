@@ -199,7 +199,7 @@ class VoiceService {
         const alreadyAdded = senders.some((s) => s.track === track || (s.track && s.track.id === track.id));
         if (alreadyAdded) return;
 
-        const audioSender = senders.find((s) => s.track?.kind === 'audio');
+        const audioSender = senders.find((s) => s.track?.kind === 'audio' || s.track === null);
         if (audioSender) {
           audioSender.replaceTrack(track).catch(() => {});
         } else {
@@ -383,21 +383,24 @@ class VoiceService {
 
     // Receive remote audio track
     pc.ontrack = (event) => {
-      console.log('[VoiceService] Received remote audio stream');
-      if (this.remoteAudioElement && event.streams[0]) {
-        this.remoteAudioElement.srcObject = event.streams[0];
-        this.remoteAudioElement.muted = false;
-        this.remoteAudioElement.volume = 1.0;
-        this.remoteAudioElement
-          .play()
-          .then(() => {
-            this.isAudioBlockedByAutoplay = false;
-          })
-          .catch((err) => {
-            console.log('[VoiceService] Remote audio autoplay deferred until user interaction:', err.message);
-            this.isAudioBlockedByAutoplay = true;
-          });
-        useAppStore.getState().setVoiceConnected(true);
+      console.log('[VoiceService] Received remote audio track');
+      if (this.remoteAudioElement) {
+        const stream = (event.streams && event.streams[0]) || (event.track ? new MediaStream([event.track]) : null);
+        if (stream) {
+          this.remoteAudioElement.srcObject = stream;
+          this.remoteAudioElement.muted = false;
+          this.remoteAudioElement.volume = 1.0;
+          this.remoteAudioElement
+            .play()
+            .then(() => {
+              this.isAudioBlockedByAutoplay = false;
+            })
+            .catch((err) => {
+              console.log('[VoiceService] Remote audio autoplay deferred until user interaction:', err.message);
+              this.isAudioBlockedByAutoplay = true;
+            });
+          useAppStore.getState().setVoiceConnected(true);
+        }
       }
     };
 
@@ -437,9 +440,22 @@ class VoiceService {
       }
     };
 
-    // Attach local microphone audio track safely without duplicating senders
-    const stream = await this.ensureLocalMedia();
-    this.attachStreamToPeer(pc, stream);
+    // Ensure bidirectional audio transceiver is configured upfront
+    try {
+      const hasAudio = pc.getTransceivers().some((t) => t.receiver?.track?.kind === 'audio');
+      if (!hasAudio) {
+        pc.addTransceiver('audio', { direction: 'sendrecv' });
+      }
+    } catch (e: any) {
+      console.warn('[VoiceService] addTransceiver warning:', e.message);
+    }
+
+    // Attach local microphone audio track if already available; otherwise acquire non-blockingly
+    if (this.localStream) {
+      this.attachStreamToPeer(pc, this.localStream);
+    } else {
+      this.ensureLocalMedia().catch(() => {});
+    }
 
     return pc;
   }
